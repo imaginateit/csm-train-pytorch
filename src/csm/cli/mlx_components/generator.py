@@ -562,6 +562,13 @@ class MLXGenerator:
                 
                 if self.debug:
                     print(f"Samples shape for decode: {audio_tokens.shape}")
+                    print(f"Samples dtype: {audio_tokens.dtype}")
+                
+                # Convert float tensors to integers as required by the codec
+                if audio_tokens.dtype != torch.int64 and audio_tokens.dtype != torch.int32:
+                    if self.debug:
+                        print(f"Converting audio tokens from {audio_tokens.dtype} to int64")
+                    audio_tokens = audio_tokens.round().to(torch.int64)
                 
                 # Call decode with exactly the format used in original generator
                 audio = self.model._audio_tokenizer.decode(audio_tokens).squeeze(0).squeeze(0)
@@ -655,6 +662,12 @@ class MLXGenerator:
                 
                 if self.debug:
                     print(f"Final tokens shape for decode: {audio_tokens.shape}")
+                
+                # Convert float tensors to integers as required by the codec
+                if audio_tokens.dtype != torch.int64 and audio_tokens.dtype != torch.int32:
+                    if self.debug:
+                        print(f"Converting audio tokens from {audio_tokens.dtype} to int64")
+                    audio_tokens = audio_tokens.round().to(torch.int64)
                 
                 # Call decode with the properly shaped tokens
                 audio = self.model._audio_tokenizer.decode(audio_tokens)
