@@ -63,6 +63,12 @@ else:
     import mlx.core as mx
     import mlx.nn as nn
     
+    # Import modular MLX implementation
+    from csm.cli.mlx_layers import torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
+    from csm.cli.mlx_embedding import MLXEmbedding, mlx_sample_topk, mlx_sample_categorical
+    from csm.cli.mlx_generation import MLXFrameGenerator
+    from csm.cli.mlx_wrapper import MLXWrapper
+    
     from ..generator import Segment, load_csm_1b
     from ..models.model import ModelArgs, Model, _create_causal_mask, _index_causal_mask, sample_topk
     
@@ -1979,6 +1985,8 @@ class MLXGenerator:
         self.timing_stats = {
             "total_time": 0,
             "frames_generated": 0,
+            "pure_mlx_success": 0,
+            "hybrid_fallbacks": 0,
             "sampling_time": 0,
             "backbone_time": 0,
             "decode_time": 0
