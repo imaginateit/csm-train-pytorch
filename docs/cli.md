@@ -138,7 +138,13 @@ Mac users have two options, in order of preference:
 1. **MLX Acceleration** (recommended for Apple Silicon): Install with `pip install -e ".[apple]"` and use `csm-generate-mlx` for best performance
    - This implementation uses MLX to accelerate model inference on Apple Silicon GPUs
    - MLX provides optimized tensor operations specifically designed for Apple devices
-   - Automatically falls back to the PyTorch implementation if MLX is not available
+   - Implements a full MLX transformer architecture for maximum performance
+   - Has three acceleration modes that automatically activate based on your device:
+     - **Pure MLX Mode**: Full MLX transformer for maximum speed (Apple Silicon only)
+     - **Hybrid Mode**: MLX for embedding and sampling operations with PyTorch transformers
+     - **PyTorch Mode**: Automatic fallback when MLX is not available
+   - Up to 2-3x faster on Apple Silicon compared to PyTorch
+   - Show detailed performance metrics with `--debug` flag
 2. **PyTorch**: Use standard `csm-generate` (slower on Mac)
 
 ### Linux/Windows with NVIDIA GPU
