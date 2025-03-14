@@ -74,31 +74,72 @@ mypy src/ tests/
 
 ## MLX Acceleration Architecture
 
-The MLX acceleration for Apple Silicon is implemented as a set of modular components:
+The MLX acceleration for Apple Silicon is implemented as a modular system:
 
-1. `src/csm/cli/mlx_layers.py`: Core MLX layer implementations and utilities
-   - MLXLayerNorm, MLXAttention, MLPMLP
-   - MLXTransformerLayer and MLXTransformer
-   - Utility functions for tensor conversion and masking
+### Core Components in `src/csm/cli/mlx_components/`
 
-2. `src/csm/cli/mlx_embedding.py`: Embedding and sampling operations
-   - MLXEmbedding class for text and audio embeddings
-   - mlx_sample_topk and mlx_sample_categorical functions
-   - Robust shape handling for embedding operations
+1. `src/csm/cli/mlx_components/utils.py`: Utility functions for MLX acceleration
+   - Compatibility checking and error handling
+   - Performance measurement functions
+   - Debug helpers and type formatting
 
-3. `src/csm/cli/mlx_generation.py`: Frame generation pipeline
-   - MLXFrameGenerator for pure MLX inference
-   - Robust error handling and fallback mechanisms
-   - Shape validation and correction
+2. `src/csm/cli/mlx_components/config.py`: Configuration management
+   - Voice preset definitions and handling
+   - Default parameter values
+   - Model configuration
 
-4. `src/csm/cli/mlx_wrapper.py`: Bridge between PyTorch and MLX
-   - MLXWrapper for model parameter conversion
-   - Hybrid PyTorch/MLX execution paths
-   - Parameter validation and conversion
+3. `src/csm/cli/mlx_components/transformer.py`: Transformer implementation
+   - MLX-optimized transformer blocks
+   - Attention mechanisms
+   - Position embeddings and mask handling
 
-5. `src/csm/cli/generate_mlx.py`: Command-line interface
-   - MLXGenerator for high-level control
+4. `src/csm/cli/mlx_components/sampling.py`: Token sampling operations
+   - Top-k sampling implementation
+   - Temperature-based sampling
+   - Categorical sampling utilities
+
+5. `src/csm/cli/mlx_components/model_wrapper.py`: Model conversion
+   - PyTorch to MLX model conversion
+   - Parameter handling and transfer
+   - Forward pass implementation
+
+6. `src/csm/cli/mlx_components/generator.py`: Speech generation
+   - Text to audio token generation
+   - Audio token decoding
+   - Watermarking integration
+   - Multiple fallback paths for robustness
+
+### Supporting Files
+
+1. `src/csm/cli/mlx_layers.py`: Core MLX layer implementations
+   - Transformer layers and components
+   - RoPE implementation and attention mechanisms
+
+2. `src/csm/cli/mlx_embedding.py`: Embedding operations
+   - Text and audio embedding functions
+   - Shape-safe tensor operations
+
+3. `src/csm/cli/mlx_kvcache.py`: Key-value cache implementation
+   - Optimized cache for transformer inference
+   - Position-based indexing
+
+4. `src/csm/cli/mlx_ops.py`: Low-level MLX operations
+   - Tensor manipulation utilities
+   - Math operations compatible with MLX constraints
+   - Conversion between PyTorch and MLX tensors
+
+5. `src/csm/cli/mlx_generation.py`: Generation pipeline
+   - Frame generation logic
+   - Error handling and fallbacks
+
+6. `src/csm/cli/mlx_wrapper.py`: PyTorch-MLX bridge
+   - Model parameter conversion
+   - Support for both direct Model and Generator classes
+
+7. `src/csm/cli/generate_mlx.py`: Command-line interface
+   - Main entry point for MLX acceleration
+   - Multi-stage fallback system for robustness
    - Integration with watermarking and audio processing
-   - Performance tracking and statistics
+   - Performance tracking and reporting
 
-When running on Apple Silicon, the system attempts pure MLX execution for maximum performance, with automatic fallback to hybrid mode and finally to PyTorch if needed.
+When running on Apple Silicon, the system first attempts pure MLX execution for maximum performance. If any issues are encountered, it automatically falls back to hybrid mode and ultimately to PyTorch if needed. The architecture includes special handling for MLX's tensor operations, particularly around reshape operations which differ from PyTorch's implementation.
