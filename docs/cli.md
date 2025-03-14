@@ -20,24 +20,23 @@ This will make the command-line tools available in your environment.
 
 ## Generating Speech
 
-CSM provides three commands for generating speech from text:
+CSM provides two commands for generating speech from text:
 
-- `csm-generate`: Standard version (requires CUDA GPU)
-- `csm-generate-cpu`: CPU-compatible version for systems without specialized GPU libraries
+- `csm-generate`: Standard version (works on all platforms, CUDA-optimized on NVIDIA GPUs)
 - `csm-generate-mlx`: MLX-accelerated version for Apple Silicon Macs
 
 ### Basic Usage
 
-Generate speech from text on Mac with Apple Silicon (recommended):
+Generate speech from text on Mac with Apple Silicon (recommended for Mac users):
 
 ```bash
 csm-generate-mlx --text "Hello, this is a test."
 ```
 
-Generate speech from text on CPU:
+Generate speech on other platforms:
 
 ```bash
-csm-generate-cpu --text "Hello, this is a test."
+csm-generate --text "Hello, this is a test."
 ```
 
 These commands will:
@@ -58,7 +57,7 @@ These commands will:
 --debug                   Enable debug mode with more detailed output
 ```
 
-The `csm-generate` command accepts a `--device` parameter to select between "cuda" and "cpu", but the other commands automatically target specific hardware.
+The `csm-generate` command also accepts a `--device` parameter to select between "cuda" and "cpu".
 
 ### Using Context
 
@@ -99,11 +98,10 @@ This will analyze the audio file and report whether it contains a CSM watermark.
 
 ### Mac Users
 
-Mac users have three options, in order of preference:
+Mac users have two options, in order of preference:
 
-1. **MLX Acceleration** (recommended for Apple Silicon): Install with `pip install -e ".[apple]"` and use `csm-generate-mlx`
-2. **CPU Generation**: Use `csm-generate-cpu` for simpler compatibility
-3. **PyTorch Metal**: Use standard `csm-generate` with `--device cpu` (slower)
+1. **MLX Acceleration** (recommended for Apple Silicon): Install with `pip install -e ".[apple]"` and use `csm-generate-mlx` for best performance
+2. **PyTorch**: Use standard `csm-generate` (slower)
 
 ### Linux/Windows with NVIDIA GPU
 
