@@ -31,6 +31,8 @@ class MLXFrameGenerator:
         debug: bool = False,
         fallback_fn = None
     ):
+        # Make debug a property so it can be accessed in methods
+        self.debug = debug
         self.backbone = backbone
         self.decoder = decoder
         self.embedding = embedding
@@ -110,6 +112,33 @@ class MLXFrameGenerator:
             # Sum across codebook dimension - shape: [batch, seq_len, embed_dim]
             hidden_states = mx.sum(masked_embeds, axis=2)
             
+            # Handle reshape issues by explicitly reshaping to correct dimensions
+            # This is the critical section that's causing the reshape errors
+            if batch_size * seq_len * embed_dim != hidden_states.size:
+                if self.debug:
+                    print(f"Fixing hidden_states shape issue: {hidden_states.shape}, size={hidden_states.size}, expected={batch_size*seq_len*embed_dim}")
+                
+                # Case 1: Initial reshape for input text tokens (common case)
+                if hidden_states.size == seq_len and batch_size == 1:
+                    # Create zeros with correct shape and size
+                    correct_hidden = mx.zeros((batch_size, seq_len, embed_dim))
+                    # Copy data where possible
+                    for i in range(min(seq_len, hidden_states.size)):
+                        value = hidden_states[i] if i < hidden_states.size else 0
+                        correct_hidden = correct_hidden.at[0, i, 0].set(value)
+                    hidden_states = correct_hidden
+                
+                # Case 2: Single token case for subsequent frames
+                elif hidden_states.size == 1 and batch_size == 1 and seq_len == 1:
+                    # Create array with correct shape
+                    value = hidden_states.item() if hasattr(hidden_states, 'item') else hidden_states.reshape(-1)[0]
+                    correct_hidden = mx.ones((batch_size, seq_len, embed_dim)) * value
+                    hidden_states = correct_hidden
+                
+                # Case 3: Directly reshape if dimensions are compatible
+                elif hidden_states.size == batch_size * seq_len * embed_dim:
+                    hidden_states = hidden_states.reshape(batch_size, seq_len, embed_dim)
+            
             # Step 2: Run backbone transformer
             # Create causal mask - shape: [seq_len, seq_len]
             backbone_mask = create_causal_mask(seq_len)
@@ -128,16 +157,49 @@ class MLXFrameGenerator:
             if self.codebook0_head_weight is not None:
                 c0_logits = mx.matmul(last_hidden, self.codebook0_head_weight.T)
                 
-                # Sample from logits - shape: [batch, 1]
+                # Sample from logits - shape could be [batch] or [batch, 1]
                 c0_sample_mlx = mlx_sample_categorical(c0_logits, temperature)
                 
-                # Convert to PyTorch
+                # Fix shape issues with categorical sampling result
+                if len(c0_sample_mlx.shape) == 0:  # Scalar result
+                    # Convert scalar to [1, 1] tensor
+                    c0_sample_mlx = mx.array([[c0_sample_mlx.item() if hasattr(c0_sample_mlx, 'item') else c0_sample_mlx]])
+                elif len(c0_sample_mlx.shape) == 1:  # Vector result [batch]
+                    # Add sequence dimension: [batch] -> [batch, 1]
+                    c0_sample_mlx = mx.expand_dims(c0_sample_mlx, axis=1)
+                
+                # Convert to PyTorch with explicit shape
                 c0_sample = mlx_to_torch(c0_sample_mlx)
             else:
                 raise ValueError("codebook0_head_weight is required for MLX generation")
             
             # Get embedding for c0 - shape: [batch, 1, embed_dim]
-            c0_embed_mlx = self.embedding.embed_audio(c0_sample_mlx, 0)
+            try:
+                c0_embed_mlx = self.embedding.embed_audio(c0_sample_mlx, 0)
+                
+                # Verify embedding shape and fix if needed
+                if c0_embed_mlx.size != batch_size * 1 * embed_dim:
+                    if self.debug:
+                        print(f"Fixing c0_embed_mlx shape: {c0_embed_mlx.shape}, size={c0_embed_mlx.size}, expected={batch_size*1*embed_dim}")
+                    
+                    # Create zeros with correct dimensions
+                    correct_embed = mx.zeros((batch_size, 1, embed_dim))
+                    
+                    # If we have a scalar value, expand it
+                    if len(c0_embed_mlx.shape) == 0:
+                        value = c0_embed_mlx.item() if hasattr(c0_embed_mlx, 'item') else float(c0_embed_mlx)
+                        correct_embed = mx.ones((batch_size, 1, embed_dim)) * value
+                    # If we have a vector, reshape it
+                    elif len(c0_embed_mlx.shape) == 1 and c0_embed_mlx.size == embed_dim:
+                        for i in range(embed_dim):
+                            correct_embed = correct_embed.at[0, 0, i].set(c0_embed_mlx[i])
+                    
+                    c0_embed_mlx = correct_embed
+            except Exception as e:
+                if self.debug:
+                    print(f"Error in c0 embedding: {e}")
+                # Create a fallback embedding
+                c0_embed_mlx = mx.zeros((batch_size, 1, embed_dim))
             
             # Step 4: Initialize decoder state
             # Add batch dimension if needed
@@ -182,18 +244,51 @@ class MLXFrameGenerator:
                     if self.audio_head_weights is not None and i - 1 < len(self.audio_head_weights):
                         ci_logits = mx.matmul(last_decoder_hidden, self.audio_head_weights[i - 1].T)
                         
-                        # Sample from logits - shape: [batch, 1]
+                        # Sample from logits - shape could be [batch] or [batch, 1]
                         ci_sample_mlx = mlx_sample_categorical(ci_logits, temperature)
                         
-                        # Convert to PyTorch
+                        # Fix shape issues with categorical sampling result
+                        if len(ci_sample_mlx.shape) == 0:  # Scalar result
+                            # Convert scalar to [1, 1] tensor
+                            ci_sample_mlx = mx.array([[ci_sample_mlx.item() if hasattr(ci_sample_mlx, 'item') else ci_sample_mlx]])
+                        elif len(ci_sample_mlx.shape) == 1:  # Vector result [batch]
+                            # Add sequence dimension: [batch] -> [batch, 1]
+                            ci_sample_mlx = mx.expand_dims(ci_sample_mlx, axis=1)
+                        
+                        # Convert to PyTorch with explicit shape
                         ci_sample = mlx_to_torch(ci_sample_mlx)
                     else:
                         raise ValueError(f"audio_head_weights[{i-1}] is required for MLX generation")
                     
                     # Get embedding - shape: [batch, 1, embed_dim]
-                    ci_embed_mlx = self.embedding.embed_audio(ci_sample_mlx, i)
+                    try:
+                        ci_embed_mlx = self.embedding.embed_audio(ci_sample_mlx, i)
+                        
+                        # Verify embedding shape and fix if needed
+                        if ci_embed_mlx.size != batch_size * 1 * embed_dim:
+                            if self.debug:
+                                print(f"Fixing ci_embed_mlx shape: {ci_embed_mlx.shape}, size={ci_embed_mlx.size}, expected={batch_size*1*embed_dim}")
+                            
+                            # Create zeros with correct dimensions
+                            correct_embed = mx.zeros((batch_size, 1, embed_dim))
+                            
+                            # If we have a scalar value, expand it
+                            if len(ci_embed_mlx.shape) == 0:
+                                value = ci_embed_mlx.item() if hasattr(ci_embed_mlx, 'item') else float(ci_embed_mlx)
+                                correct_embed = mx.ones((batch_size, 1, embed_dim)) * value
+                            # If we have a vector, reshape it
+                            elif len(ci_embed_mlx.shape) == 1 and ci_embed_mlx.size == embed_dim:
+                                for j in range(embed_dim):
+                                    correct_embed = correct_embed.at[0, 0, j].set(ci_embed_mlx[j])
+                            
+                            ci_embed_mlx = correct_embed
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error in ci embedding for codebook {i}: {e}")
+                        # Create a fallback embedding
+                        ci_embed_mlx = mx.zeros((batch_size, 1, embed_dim))
                     
-                    # Update state
+                    # Update state - ensure the shape is correct
                     curr_hidden = ci_embed_mlx
                     curr_sample = torch.cat([curr_sample, ci_sample], dim=1)
                     

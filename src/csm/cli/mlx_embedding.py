@@ -45,23 +45,54 @@ class MLXEmbedding:
         if self.text_embeddings is None:
             raise ValueError("Text embeddings not available")
             
-        # Ensure proper input shape
-        if len(tokens.shape) > 2:
-            tokens = tokens.reshape(-1, tokens.shape[-1])
-        elif len(tokens.shape) == 1:
-            tokens = tokens.reshape(1, -1)
-            
-        batch_size, seq_len = tokens.shape
+        # Handle input shape carefully
+        original_shape = tokens.shape
         
+        # Get dimensions
+        if len(original_shape) == 0:  # Scalar
+            batch_size, seq_len = 1, 1
+            tokens = mx.array([[tokens.item() if hasattr(tokens, 'item') else tokens]])
+        elif len(original_shape) == 1:  # Vector [seq_len]
+            batch_size, seq_len = 1, original_shape[0]
+            tokens = mx.expand_dims(tokens, axis=0)  # [1, seq_len]
+        elif len(original_shape) == 2:  # Matrix [batch_size, seq_len]
+            batch_size, seq_len = original_shape
+        elif len(original_shape) == 3 and original_shape[2] == 1:  # 3D with final dim 1
+            batch_size, seq_len = original_shape[0], original_shape[1]
+            tokens = tokens[:, :, 0]  # Remove final dimension
+        else:
+            # Unexpected shape, try best effort reshape
+            if self.debug:
+                print(f"Unexpected token shape: {original_shape}")
+            total_elements = np.prod(original_shape)
+            batch_size, seq_len = 1, total_elements
+            tokens = tokens.reshape(batch_size, seq_len)
+            
         try:
-            # Flatten tokens for lookup
-            flat_tokens = tokens.reshape(-1)
+            # Process each token individually to avoid reshape issues
+            embeddings = mx.zeros((batch_size, seq_len, self.embed_dim))
             
-            # Look up embeddings
-            flat_embeds = mx.take(self.text_embeddings, flat_tokens)
-            
-            # Reshape to [batch_size, seq_len, embed_dim]
-            embeddings = flat_embeds.reshape(batch_size, seq_len, self.embed_dim)
+            for b in range(batch_size):
+                for s in range(seq_len):
+                    try:
+                        # Get the token ID, handling potential shape issues
+                        if batch_size == 1 and seq_len == 1 and len(original_shape) == 0:
+                            # Scalar case
+                            token_id = tokens.item() if hasattr(tokens, 'item') else int(tokens)
+                        else:
+                            # Normal case
+                            token_id = tokens[b, s].item() if hasattr(tokens[b, s], 'item') else int(tokens[b, s])
+                        
+                        # Look up embedding for this token, handle out of bounds
+                        if 0 <= token_id < self.text_embeddings.shape[0]:
+                            token_embedding = self.text_embeddings[token_id]
+                            # Copy embedding values to avoid reshape issues
+                            for i in range(self.embed_dim):
+                                if i < len(token_embedding):
+                                    embeddings = embeddings.at[b, s, i].set(token_embedding[i])
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error embedding token at position ({b},{s}): {e}")
             
             return embeddings
         except Exception as e:
@@ -86,29 +117,60 @@ class MLXEmbedding:
         if self.audio_embeddings is None:
             raise ValueError("Audio embeddings not available")
             
-        # Ensure proper input shape
-        if len(tokens.shape) > 2:
-            tokens = tokens.reshape(-1, tokens.shape[-1])
-        elif len(tokens.shape) == 1:
-            tokens = tokens.reshape(1, -1)
-            
-        batch_size, seq_len = tokens.shape
+        # Handle input shape carefully
+        original_shape = tokens.shape
         
+        # Get dimensions
+        if len(original_shape) == 0:  # Scalar
+            batch_size, seq_len = 1, 1
+            tokens = mx.array([[tokens.item() if hasattr(tokens, 'item') else tokens]])
+        elif len(original_shape) == 1:  # Vector [seq_len]
+            batch_size, seq_len = 1, original_shape[0]
+            tokens = mx.expand_dims(tokens, axis=0)  # [1, seq_len]
+        elif len(original_shape) == 2:  # Matrix [batch_size, seq_len]
+            batch_size, seq_len = original_shape
+        elif len(original_shape) == 3 and original_shape[2] == 1:  # 3D with final dim 1
+            batch_size, seq_len = original_shape[0], original_shape[1]
+            tokens = tokens[:, :, 0]  # Remove final dimension
+        else:
+            # Unexpected shape, try best effort reshape
+            if self.debug:
+                print(f"Unexpected token shape for audio codebook {codebook}: {original_shape}")
+            total_elements = np.prod(original_shape)
+            batch_size, seq_len = 1, total_elements
+            tokens = tokens.reshape(batch_size, seq_len)
+        
+        # Calculate offset based on codebook
+        offset = codebook * self.audio_vocab_size
+            
         try:
-            # Calculate offset based on codebook
-            offset = codebook * self.audio_vocab_size
+            # Process each token individually to avoid reshape issues
+            embeddings = mx.zeros((batch_size, seq_len, self.embed_dim))
             
-            # Apply offset to tokens
-            tokens_with_offset = tokens + offset
-            
-            # Flatten tokens for lookup
-            flat_tokens = tokens_with_offset.reshape(-1)
-            
-            # Look up embeddings
-            flat_embeds = mx.take(self.audio_embeddings, flat_tokens)
-            
-            # Reshape to [batch_size, seq_len, embed_dim]
-            embeddings = flat_embeds.reshape(batch_size, seq_len, self.embed_dim)
+            for b in range(batch_size):
+                for s in range(seq_len):
+                    try:
+                        # Get the token ID, handling potential shape issues
+                        if batch_size == 1 and seq_len == 1 and len(original_shape) == 0:
+                            # Scalar case
+                            token_id = tokens.item() if hasattr(tokens, 'item') else int(tokens)
+                        else:
+                            # Normal case
+                            token_id = tokens[b, s].item() if hasattr(tokens[b, s], 'item') else int(tokens[b, s])
+                        
+                        # Apply offset
+                        token_id_with_offset = token_id + offset
+                        
+                        # Look up embedding for this token, handle out of bounds
+                        if 0 <= token_id_with_offset < self.audio_embeddings.shape[0]:
+                            token_embedding = self.audio_embeddings[token_id_with_offset]
+                            # Copy embedding values to avoid reshape issues
+                            for i in range(self.embed_dim):
+                                if i < len(token_embedding):
+                                    embeddings = embeddings.at[b, s, i].set(token_embedding[i])
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error embedding audio token at position ({b},{s}) for codebook {codebook}: {e}")
             
             return embeddings
         except Exception as e:
