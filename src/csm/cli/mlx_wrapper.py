@@ -90,20 +90,43 @@ class MLXWrapper:
         print(f"Found {bfloat16_count} BFloat16 parameters out of {total_params} total parameters")
         print("Converting all parameters to float32 for MLX compatibility")
         
-        # Convert backbone_causal_mask
-        self.backbone_causal_mask = torch_to_mlx(self.torch_model.backbone_causal_mask)
-        print("Converted backbone_causal_mask")
-        
-        # Convert decoder_causal_mask
-        self.decoder_causal_mask = torch_to_mlx(self.torch_model.decoder_causal_mask)
-        print("Converted decoder_causal_mask")
+        # Convert backbone_causal_mask and decoder_causal_mask
+        try:
+            if hasattr(self.torch_model, 'backbone_causal_mask'):
+                self.backbone_causal_mask = torch_to_mlx(self.torch_model.backbone_causal_mask)
+                print("Converted backbone_causal_mask")
+            else:
+                print("No backbone_causal_mask found, will create one dynamically")
+                self.backbone_causal_mask = None
+            
+            if hasattr(self.torch_model, 'decoder_causal_mask'):
+                self.decoder_causal_mask = torch_to_mlx(self.torch_model.decoder_causal_mask)
+                print("Converted decoder_causal_mask")
+            else:
+                print("No decoder_causal_mask found, will create one dynamically")
+                self.decoder_causal_mask = None
+        except Exception as e:
+            print(f"Error converting causal masks: {e}. Will create dynamically.")
+            self.backbone_causal_mask = None
+            self.decoder_causal_mask = None
         
         # Convert audio_head
-        if hasattr(self.torch_model, 'audio_head'):
+        try:
+            if hasattr(self.torch_model, 'audio_head'):
+                self.audio_head = []
+                for i, head in enumerate(self.torch_model.audio_head):
+                    if hasattr(head, 'weight'):
+                        self.audio_head.append(torch_to_mlx(head.weight))
+                    else:
+                        # If head is a tensor directly, convert it
+                        self.audio_head.append(torch_to_mlx(head))
+                print(f"Converted audio_head with {len(self.audio_head)} heads")
+            else:
+                print("No audio_head found")
+                self.audio_head = []
+        except Exception as e:
+            print(f"Error converting audio_head: {e}")
             self.audio_head = []
-            for i, head in enumerate(self.torch_model.audio_head):
-                self.audio_head.append(torch_to_mlx(head.weight))
-            print("Converted audio_head")
         
         # Convert backbone transformer
         print("Converting backbone transformer...")
