@@ -298,6 +298,14 @@ class MLXGenerator:
                         # Default to speaker 0
                         generate_kwargs['speaker'] = 0
                         
+                # Handle context parameter
+                if 'context' in param_names:
+                    generate_kwargs['context'] = []
+                    
+                # Handle max_audio_length_ms parameter
+                if 'max_audio_length_ms' in param_names:
+                    generate_kwargs['max_audio_length_ms'] = 10000  # 10 seconds default
+                        
                 if self.debug:
                     print(f"Calling MLX generate with kwargs: {generate_kwargs}")
                     
