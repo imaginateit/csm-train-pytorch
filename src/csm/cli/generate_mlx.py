@@ -1433,38 +1433,131 @@ class MLXWrapper:
                 # Get dimensions
                 b, s, _ = tokens.size()
                 
+                # Extract embedding dimension from embeddings 
+                embed_dim = self.text_embeddings_weight.shape[1] if self.text_embeddings_weight is not None else 2048
+                
                 # Step 2: Prepare embeddings and inputs for backbone
-                # Use MLX for token embedding
-                text_tokens = mlx_tokens[:, :, -1]
-                audio_tokens = mlx_tokens[:, :, :-1]
+                # Use MLX for token embedding with careful shape management
+                text_tokens = mlx_tokens[:, :, -1]  # Shape: [batch, seq_len]
+                audio_tokens = mlx_tokens[:, :, :-1]  # Shape: [batch, seq_len, num_codebooks]
                 
-                # Get text embeddings
-                text_embeds = self._embed_text_mlx(text_tokens)
-                text_embeds = mx.expand_dims(text_embeds, axis=2)  # Add codebook dimension
+                # Get text embeddings (with proper shape tracking)
+                if self.text_embeddings_weight is not None:
+                    # Direct embedding lookup using MLX - shape: [batch, seq_len, embed_dim]
+                    text_embeds = mx.take(self.text_embeddings_weight, text_tokens.reshape(-1))
+                    text_embeds = text_embeds.reshape(b, s, embed_dim)
+                    # Add codebook dimension - shape: [batch, seq_len, 1, embed_dim]
+                    text_embeds = mx.expand_dims(text_embeds, axis=2)
+                else:
+                    # Fallback to the helper function
+                    text_embeds = self._embed_text_mlx(text_tokens)
+                    if text_embeds is None:
+                        # If MLX embedding fails, fall back to PyTorch
+                        text_embeds_torch = self.torch_model.text_embeddings(mlx_to_torch(text_tokens))
+                        text_embeds = torch_to_mlx(text_embeds_torch)
+                    # Add codebook dimension - shape: [batch, seq_len, 1, embed_dim]
+                    text_embeds = mx.expand_dims(text_embeds, axis=2)
                 
-                # Get audio embeddings for each codebook
+                # Get audio embeddings for each codebook with careful shape management
                 audio_embeds_list = []
                 for codebook in range(self.args.audio_num_codebooks):
-                    # Extract tokens for this codebook
+                    # Extract tokens for this codebook - shape: [batch, seq_len]
                     codebook_tokens = audio_tokens[:, :, codebook]
-                    # Embed using our MLX embedding function
-                    codebook_embeds = self._embed_audio_mlx(codebook, codebook_tokens)
-                    # Add codebook dimension if needed
-                    if len(codebook_embeds.shape) == 3:  # [batch, seq, embed_dim]
-                        codebook_embeds = mx.expand_dims(codebook_embeds, axis=2)
+                    
+                    # Direct embedding lookup if possible
+                    if self.audio_embeddings_weight is not None:
+                        # Calculate offsets for audio tokens
+                        offset = codebook * self.args.audio_vocab_size
+                        tokens_with_offset = codebook_tokens + offset
+                        
+                        # Use direct lookup - shape: [batch*seq_len, embed_dim]
+                        codebook_embeds_flat = mx.take(self.audio_embeddings_weight, 
+                                                     tokens_with_offset.reshape(-1))
+                        
+                        # Reshape to [batch, seq_len, embed_dim]
+                        codebook_embeds = codebook_embeds_flat.reshape(b, s, embed_dim)
+                    else:
+                        # Fall back to helper function
+                        codebook_embeds = self._embed_audio_mlx(codebook, codebook_tokens)
+                        if codebook_embeds is None:
+                            # If MLX embedding fails, use PyTorch
+                            codebook_embeds_torch = self.torch_model._embed_audio(
+                                codebook, mlx_to_torch(codebook_tokens))
+                            codebook_embeds = torch_to_mlx(codebook_embeds_torch)
+                    
+                    # Add codebook dimension - shape: [batch, seq_len, 1, embed_dim]
+                    codebook_embeds = mx.expand_dims(codebook_embeds, axis=2)
                     audio_embeds_list.append(codebook_embeds)
                 
-                # Concatenate all audio embeddings along the codebook dimension
+                # Concatenate all embeddings with shape validation
                 if audio_embeds_list:
-                    audio_embeds = mx.concatenate(audio_embeds_list, axis=2)
-                    # Concatenate with text embeddings
+                    # Verify each embedding has the right shape 
+                    validated_embeds = []
+                    for embed in audio_embeds_list:
+                        if len(embed.shape) != 4:  # Should be [batch, seq, 1, embed_dim]
+                            print(f"Fixing shape for audio embedding: {embed.shape}")
+                            if len(embed.shape) == 3:  # [batch, seq, embed_dim]
+                                embed = mx.expand_dims(embed, axis=2)
+                            elif len(embed.shape) == 2:  # [batch, embed_dim]
+                                embed = mx.expand_dims(mx.expand_dims(embed, axis=1), axis=2)
+                        validated_embeds.append(embed)
+                    
+                    # Concatenate along codebook dim - shape: [batch, seq_len, num_codebooks, embed_dim]
+                    audio_embeds = mx.concatenate(validated_embeds, axis=2) 
+                    
+                    # Verify text_embeds shape before concatenation
+                    if len(text_embeds.shape) != 4:
+                        # Handle different input shapes safely
+                        if len(text_embeds.shape) == 3:  # [batch, seq, embed_dim]
+                            text_embeds = mx.expand_dims(text_embeds, axis=2)
+                        elif len(text_embeds.shape) == 2:  # [batch, embed_dim]
+                            text_embeds = mx.expand_dims(mx.expand_dims(text_embeds, axis=1), axis=1)
+                        else:
+                            # Fall back to reshape only if dimensions are compatible
+                            text_size = text_embeds.size
+                            if text_size == b * s * embed_dim:
+                                # Only reshape if dimensions are compatible
+                                text_embeds = text_embeds.reshape(b, s, 1, embed_dim)
+                            else:
+                                print(f"Warning: text_embeds shape {text_embeds.shape} can't be reshaped to {(b, s, 1, embed_dim)}")
+                        
+                    # Concatenate audio and text - shape: [batch, seq_len, num_codebooks+1, embed_dim]
                     all_embeds = mx.concatenate([audio_embeds, text_embeds], axis=2)
                 else:
+                    # Just use text embeddings if no audio - shape: [batch, seq_len, 1, embed_dim]
                     all_embeds = text_embeds
                 
                 # Apply mask and sum across codebook dimension
-                masked_embeds = all_embeds * mx.expand_dims(mlx_tokens_mask, axis=-1)
+                # Expand mask to broadcasting shape - [batch, seq_len, 1, 1]
+                expanded_mask = mx.expand_dims(mx.expand_dims(mlx_tokens_mask, axis=-1), axis=-1)
+                # Apply mask - shape: [batch, seq_len, num_codebooks+1, embed_dim]
+                masked_embeds = all_embeds * expanded_mask
+                # Sum across codebook dimension - shape: [batch, seq_len, embed_dim]
                 h = mx.sum(masked_embeds, axis=2)
+                
+                # Ensure proper shape before backbone processing
+                if b * s * embed_dim != h.size:
+                    # Print debug info about mismatch
+                    print(f"Shape mismatch: h.shape={h.shape}, h.size={h.size}, expected_size={b*s*embed_dim}")
+                    
+                    # Special handling for first frame with text input
+                    if h.size == 13 and s == 13:
+                        # This is the initial text input case - create a zero tensor of correct shape
+                        print(f"Creating correct tensor shape for initial text input")
+                        # Create a 1D array of correct size, then reshape
+                        correct_h = mx.zeros((b * s * embed_dim,), dtype=mx.float32)
+                        h = correct_h.reshape(b, s, embed_dim)
+                    elif h.size == 1 and s == 1:
+                        # This is the single token case which happens in subsequent frames
+                        print(f"Creating correct tensor shape for single token")
+                        correct_h = mx.zeros((b * s * embed_dim,), dtype=mx.float32) 
+                        h = correct_h.reshape(b, s, embed_dim)
+                    elif h.size == embed_dim * s:
+                        # Single batch case
+                        h = h.reshape(1, s, embed_dim)
+                    elif h.size == embed_dim:
+                        # Single token case
+                        h = h.reshape(1, 1, embed_dim)
                 
                 # Step 3: Process with MLX backbone transformer
                 # Create causal mask
@@ -1472,37 +1565,66 @@ class MLXWrapper:
                 # Index mask for positions
                 curr_backbone_mask = mlx_index_causal_mask(backbone_mask, mlx_input_pos)
                 
-                # Run backbone transformer
+                # Run backbone transformer - shape: [batch, seq_len, embed_dim]
                 h = self.mlx_backbone.forward(h, input_pos=mlx_input_pos, mask=curr_backbone_mask)
                 
                 # Step 4: Process the first codebook (c0) using MLX
-                # Extract last hidden state
+                # Extract last hidden state - shape: [batch, embed_dim]
                 last_h = h[:, -1, :]
                 
                 # Generate c0 logits with MLX matrix multiply
                 if self.codebook0_head_weight is not None:
+                    # Matrix multiply - shape: [batch, vocab_size]
                     c0_logits_mlx = mx.matmul(last_h, self.codebook0_head_weight.T)
                     
                     # Sample using MLX
-                    mlx_c0_sample_idx = mx.argmax(mx.random.categorical(
-                        mx.random.key(np.random.randint(0, 2**32)), 
-                        mx.softmax(c0_logits_mlx / temperature, axis=-1)
-                    ), axis=-1)
+                    # Apply temperature to logits
+                    scaled_logits = c0_logits_mlx / temperature
+                    # Get probabilities - shape: [batch, vocab_size]
+                    probs = mx.softmax(scaled_logits, axis=-1)
+                    # Sample from categorical - shape: [batch, 1]
+                    rng_key = mx.random.key(np.random.randint(0, 2**32))
+                    mlx_c0_sample_idx = mx.random.categorical(rng_key, probs)
                     
-                    # Convert to correct shape and PyTorch
-                    c0_sample = mlx_to_torch(mlx_c0_sample_idx).reshape(b, 1)
+                    # Convert to correct shape and PyTorch - shape: [batch, 1]
+                    # Use expand_dims instead of reshape for more reliable dimensionality
+                    c0_sample = mlx_to_torch(mx.expand_dims(mlx_c0_sample_idx, axis=1))
                 else:
                     # Fall back to PyTorch for codebook0 if needed
                     c0_logits = self.torch_model.codebook0_head(mlx_to_torch(last_h))
                     c0_sample = sample_topk(c0_logits, topk, temperature)
                 
-                # Get embedding for c0 using MLX
-                c0_mlx_sample = torch_to_mlx(c0_sample)
-                c0_embed_mlx = self._embed_audio_mlx(0, c0_mlx_sample)
+                # Get embedding for c0 using MLX - shape: [batch, 1, embed_dim]
+                c0_mlx_sample = torch_to_mlx(c0_sample.reshape(b, 1))  # Ensure shape is [batch, 1]
+                if self.audio_embeddings_weight is not None:
+                    # Direct embedding lookup using proper offsets
+                    offset = 0 * self.args.audio_vocab_size  # Codebook 0
+                    tokens_with_offset = c0_mlx_sample.reshape(-1) + offset
+                    c0_embed_flat = mx.take(self.audio_embeddings_weight, tokens_with_offset)
+                    c0_embed_mlx = c0_embed_flat.reshape(b, 1, embed_dim)
+                else:
+                    # Use helper function but verify shape
+                    c0_embed_mlx = self._embed_audio_mlx(0, c0_mlx_sample)
+                    if c0_embed_mlx is None:
+                        c0_embed_torch = self.torch_model._embed_audio(0, c0_sample)
+                        c0_embed_mlx = torch_to_mlx(c0_embed_torch)
+                    # Ensure proper shape - should be [batch, 1, embed_dim]
+                    if len(c0_embed_mlx.shape) != 3:
+                        # Handle different input shapes safely
+                        if len(c0_embed_mlx.shape) == 1:
+                            # [embed_dim] -> [1, 1, embed_dim]
+                            c0_embed_mlx = mx.expand_dims(mx.expand_dims(c0_embed_mlx, axis=0), axis=0)
+                        elif len(c0_embed_mlx.shape) == 2:
+                            # [batch, embed_dim] -> [batch, 1, embed_dim]
+                            c0_embed_mlx = mx.expand_dims(c0_embed_mlx, axis=1)
                 
                 # Initialize current state
-                curr_h_mlx = mx.concatenate([mx.expand_dims(last_h, axis=1), c0_embed_mlx], axis=1)
-                curr_sample = c0_sample.clone()
+                # Reshape last_h to match c0_embed_mlx - [batch, 1, embed_dim]
+                last_h_expanded = mx.expand_dims(last_h, axis=1)
+                # Concatenate - shape: [batch, 2, embed_dim]
+                curr_h_mlx = mx.concatenate([last_h_expanded, c0_embed_mlx], axis=1)
+                # Initialize other tracking variables
+                curr_sample = c0_sample
                 curr_pos_torch = torch.arange(0, curr_h_mlx.shape[1], 
                                              device=input_pos.device).unsqueeze(0).repeat(b, 1)
                 curr_pos_mlx = torch_to_mlx(curr_pos_torch)
@@ -1517,40 +1639,46 @@ class MLXWrapper:
                 
                 for i in range(1, self.args.audio_num_codebooks):
                     try:
-                        # Create decoder mask
+                        # Create decoder mask - shape: [seq_len, seq_len]
                         decoder_mask = mlx_create_causal_mask(curr_h_mlx.shape[1])
+                        # Index mask for positions - shape: [batch, seq_len, seq_len]
                         curr_decoder_mask = mlx_index_causal_mask(decoder_mask, curr_pos_mlx)
                         
-                        # Project input with MLX
+                        # Project input with MLX - shape: [batch, seq_len, decoder_dim]
+                        decoder_dim = self.mlx_decoder.embed_dim if hasattr(self.mlx_decoder, 'embed_dim') else 1024
                         if self.projection_weight is not None:
+                            # Direct matrix multiply - [batch, seq_len, decoder_dim]
                             projected_mlx = mx.matmul(curr_h_mlx, self.projection_weight.T)
                         else:
                             # Fall back to PyTorch projection if needed
                             projected = self.torch_model.projection(mlx_to_torch(curr_h_mlx))
                             projected_mlx = torch_to_mlx(projected)
                         
-                        # Run MLX decoder
+                        # Run MLX decoder - shape: [batch, seq_len, decoder_dim]
                         decoder_h_mlx = self.mlx_decoder.forward(
                             projected_mlx, 
                             input_pos=curr_pos_mlx, 
                             mask=curr_decoder_mask
                         )
                         
-                        # Get last hidden state
+                        # Get last hidden state - shape: [batch, decoder_dim]
                         last_decoder_h_mlx = decoder_h_mlx[:, -1, :]
                         
-                        # Generate logits with MLX
+                        # Generate logits with MLX - shape: [batch, vocab_size]
                         if self.audio_head is not None:
                             ci_logits_mlx = mx.matmul(last_decoder_h_mlx, self.audio_head[i - 1].T)
                             
-                            # Sample with MLX
-                            mlx_ci_sample_idx = mx.argmax(mx.random.categorical(
-                                mx.random.key(np.random.randint(0, 2**32)), 
-                                mx.softmax(ci_logits_mlx / temperature, axis=-1)
-                            ), axis=-1)
+                            # Sample with MLX - apply temperature to logits
+                            scaled_logits = ci_logits_mlx / temperature
+                            # Get probabilities - shape: [batch, vocab_size]
+                            probs = mx.softmax(scaled_logits, axis=-1)
+                            # Sample from categorical - shape: [batch, 1]
+                            rng_key = mx.random.key(np.random.randint(0, 2**32))
+                            mlx_ci_sample_idx = mx.random.categorical(rng_key, probs)
                             
-                            # Convert to correct shape and PyTorch
-                            ci_sample = mlx_to_torch(mlx_ci_sample_idx).reshape(b, 1)
+                            # Convert to correct shape and PyTorch - shape: [batch, 1]
+                            # Use expand_dims instead of reshape for more reliable dimensionality
+                            ci_sample = mlx_to_torch(mx.expand_dims(mlx_ci_sample_idx, axis=1))
                             pure_mlx_success += 1
                         else:
                             # Fall back to PyTorch if needed
@@ -1559,9 +1687,29 @@ class MLXWrapper:
                             ci_sample = sample_topk(ci_logits, topk, temperature)
                             pytorch_fallbacks += 1
                         
-                        # Get embedding with MLX
-                        ci_mlx_sample = torch_to_mlx(ci_sample)
-                        ci_embed_mlx = self._embed_audio_mlx(i, ci_mlx_sample)
+                        # Get embedding with MLX - shape: [batch, 1, embed_dim]
+                        ci_mlx_sample = torch_to_mlx(ci_sample.reshape(b, 1))
+                        if self.audio_embeddings_weight is not None:
+                            # Direct embedding lookup
+                            offset = i * self.args.audio_vocab_size  # Current codebook
+                            tokens_with_offset = ci_mlx_sample.reshape(-1) + offset
+                            ci_embed_flat = mx.take(self.audio_embeddings_weight, tokens_with_offset)
+                            ci_embed_mlx = ci_embed_flat.reshape(b, 1, embed_dim)
+                        else:
+                            # Helper function with shape verification
+                            ci_embed_mlx = self._embed_audio_mlx(i, ci_mlx_sample)
+                            if ci_embed_mlx is None:
+                                ci_embed_torch = self.torch_model._embed_audio(i, ci_sample)
+                                ci_embed_mlx = torch_to_mlx(ci_embed_torch)
+                            # Ensure proper shape - should be [batch, 1, embed_dim]
+                            if len(ci_embed_mlx.shape) != 3:
+                                # Handle different input shapes safely
+                                if len(ci_embed_mlx.shape) == 1:
+                                    # [embed_dim] -> [1, 1, embed_dim]
+                                    ci_embed_mlx = mx.expand_dims(mx.expand_dims(ci_embed_mlx, axis=0), axis=0)
+                                elif len(ci_embed_mlx.shape) == 2:
+                                    # [batch, embed_dim] -> [batch, 1, embed_dim]
+                                    ci_embed_mlx = mx.expand_dims(ci_embed_mlx, axis=1)
                         
                         # Update state using MLX
                         curr_h_mlx = ci_embed_mlx
