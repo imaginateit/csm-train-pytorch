@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "csm"
+description = "Conversational Speech Model"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dynamic = ["version"]
+dependencies = [
+    "torch==2.4.0",
+    "torchaudio==2.4.0",
+    "tokenizers==0.21.0",
+    "transformers==4.49.0",
+    "huggingface_hub==0.28.1",
+    "moshi==0.2.2",
+    "torchtune==0.4.0",
+    "torchao==0.9.0",
+    # Additional dependencies for the vendored silentcipher
+    "PyYAML>=6.0",
+    "librosa==0.10.0",
+    "SoundFile==0.12.1",
+    "scipy>=1.11.0",
+    "pydub==0.25.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "pytest",
+    "pytest-cov",
+    "mypy",
+    "ruff",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools_scm]
+write_to = "src/csm/_version.py"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "B", "I"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
