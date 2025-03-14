@@ -241,14 +241,76 @@ class MLXGenerator:
             Generated audio tokens
         """
         # MLX wrapper should handle the generation details
-        audio_tokens = self.model.generate(
-            text_tokens,
-            temperature=temperature,
-            top_k=topk,
-            callback=progress_callback,
-            use_mlx=True
-        )
-        return audio_tokens
+        # Check the parameter names
+        import inspect
+        
+        if hasattr(self.model, 'generate'):
+            try:
+                sig = inspect.signature(self.model.generate)
+                param_names = [param for param in sig.parameters]
+                
+                if self.debug:
+                    print(f"MLX Model.generate parameters: {param_names}")
+                
+                # Create parameters based on what the model's generate method accepts
+                generate_kwargs = {}
+                
+                # Handle text parameter
+                if 'text' in param_names and self.text is not None:
+                    # Always prioritize actual text over tokenized text
+                    generate_kwargs['text'] = self.text
+                elif 'prompt' in param_names and self.text is not None:
+                    # Some models might use 'prompt' instead of 'text'
+                    generate_kwargs['prompt'] = self.text
+                    
+                # Handle text_tokens or tokens
+                if 'text_tokens' in param_names:
+                    generate_kwargs['text_tokens'] = text_tokens
+                elif 'tokens' in param_names:
+                    generate_kwargs['tokens'] = text_tokens
+                    
+                # Handle temperature parameter
+                if 'temperature' in param_names:
+                    generate_kwargs['temperature'] = temperature
+                    
+                # Handle topk/top_k difference
+                if 'topk' in param_names:
+                    generate_kwargs['topk'] = topk
+                elif 'top_k' in param_names:
+                    generate_kwargs['top_k'] = topk
+                    
+                # Handle callback/progress_callback
+                if 'callback' in param_names and progress_callback is not None:
+                    generate_kwargs['callback'] = progress_callback
+                elif 'progress_callback' in param_names and progress_callback is not None:
+                    generate_kwargs['progress_callback'] = progress_callback
+                    
+                # Handle other common parameters
+                if 'use_mlx' in param_names:
+                    generate_kwargs['use_mlx'] = True
+                    
+                # Handle speaker parameter
+                if 'speaker' in param_names:
+                    # If we used a string voice name, try to convert to int
+                    if isinstance(self.voice, str) and self.voice.isdigit():
+                        generate_kwargs['speaker'] = int(self.voice)
+                    else:
+                        # Default to speaker 0
+                        generate_kwargs['speaker'] = 0
+                        
+                if self.debug:
+                    print(f"Calling MLX generate with kwargs: {generate_kwargs}")
+                    
+                # Call the generate method with the appropriate arguments
+                audio_tokens = self.model.generate(**generate_kwargs)
+                return audio_tokens
+                
+            except Exception as e:
+                if self.debug:
+                    print(f"Error in MLX generate: {e}")
+                raise
+        else:
+            raise ValueError("MLX model doesn't have generate method")
     
     def generate_audio_tokens_torch(
         self,
