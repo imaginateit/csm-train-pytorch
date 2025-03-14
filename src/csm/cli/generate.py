@@ -10,6 +10,20 @@ from huggingface_hub import hf_hub_download
 
 from ..generator import Segment, load_csm_1b
 
+# Define voice presets (speaker IDs mapped to voice characteristics)
+VOICE_PRESETS = {
+    "neutral": 0,       # Balanced, default voice
+    "warm": 1,          # Warmer, friendlier tone
+    "deep": 2,          # Deeper voice
+    "bright": 3,        # Brighter, higher pitch
+    "soft": 4,          # Softer, more gentle voice
+    "energetic": 5,     # More energetic/animated
+    "calm": 6,          # Calmer, measured tone
+    "clear": 7,         # Clearer articulation
+    "resonant": 8,      # More resonant voice
+    "authoritative": 9, # More authoritative tone
+}
+
 
 def main():
     """Main entry point for the generation CLI."""
@@ -25,12 +39,22 @@ def main():
         required=True,
         help="Text to generate speech for",
     )
-    parser.add_argument(
+    
+    # Voice selection group
+    voice_group = parser.add_mutually_exclusive_group()
+    voice_group.add_argument(
         "--speaker",
         type=int,
         default=0,
         help="Speaker ID (default: 0)",
     )
+    voice_group.add_argument(
+        "--voice",
+        type=str,
+        choices=VOICE_PRESETS.keys(),
+        help=f"Voice preset to use (available: {', '.join(VOICE_PRESETS.keys())})",
+    )
+    
     parser.add_argument(
         "--output",
         type=str,
@@ -82,6 +106,12 @@ def main():
 
     args = parser.parse_args()
 
+    # Determine speaker ID from either --speaker or --voice
+    speaker_id = args.speaker
+    if args.voice:
+        speaker_id = VOICE_PRESETS[args.voice]
+        print(f"Using voice preset '{args.voice}' (speaker ID: {speaker_id})")
+
     # Get the model path, downloading if necessary
     model_path = args.model_path
     if model_path is None:
@@ -125,7 +155,7 @@ def main():
     print(f"Generating audio for text: '{args.text}'")
     audio = generator.generate(
         text=args.text,
-        speaker=args.speaker,
+        speaker=speaker_id,
         context=context,
         max_audio_length_ms=args.max_audio_length_ms,
         temperature=args.temperature,
