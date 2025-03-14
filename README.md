@@ -34,23 +34,6 @@ csm-generate-mlx --text "Hello, this is a test of the CSM speech model." --voice
 
 Your generated audio is saved as `audio.wav` in the current directory.
 
-## 🎭 Voice Presets
-
-CSM includes a variety of built-in voice presets:
-
-- `neutral` - Balanced, default voice
-- `warm` - Warmer, friendlier tone
-- `deep` - Deeper voice
-- `bright` - Brighter, higher pitch
-- `soft` - Softer, more gentle voice
-- `energetic` - More energetic/animated
-- `calm` - Calmer, measured tone
-- `clear` - Clearer articulation
-- `resonant` - More resonant voice
-- `authoritative` - More authoritative tone
-
-Use any preset by specifying `--voice [preset_name]` when generating audio.
-
 ## 🖥️ Command-Line Interface
 
 CSM provides two commands for generating speech:
