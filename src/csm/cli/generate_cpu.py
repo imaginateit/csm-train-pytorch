@@ -1,6 +1,7 @@
 """Command-line interface for generation with CSM on CPU."""
 
 import argparse
+import inspect
 import os
 import sys
 import warnings
@@ -19,13 +20,59 @@ def patch_moshi():
     original_linear = getattr(quantize, "linear", None)
     
     # Define a new linear function that skips bitsandbytes
-    def patched_linear(module, input_tensor, weight_name, bias_name=None):
+    def patched_linear(module, input_tensor, weight_name="weight", bias_name=None):
+        """Patched version of linear function that works without bitsandbytes."""
         weight = getattr(module, weight_name)
         bias = getattr(module, bias_name) if bias_name is not None else None
         return torch.nn.functional.linear(input_tensor, weight, bias)
     
+    # Check the number of parameters in the original function if it exists
+    if original_linear:
+        patched_sig = inspect.signature(patched_linear)
+        orig_sig = inspect.signature(original_linear)
+        if len(patched_sig.parameters) != len(orig_sig.parameters):
+            print(f"Warning: Patched function signature differs from original: {orig_sig} vs {patched_sig}")
+    
     # Replace the linear function with our patched version
     setattr(quantize, "linear", patched_linear)
+    
+    # Also create a patch for MultiHeadAttention
+    import moshi.modules.transformer as transformer
+    
+    # Save original forward method
+    original_forward = transformer.MultiHeadAttention.forward
+    
+    # Create patched version
+    def patched_mha_forward(self, query, key=None, value=None):
+        """Patched version of MultiHeadAttention forward that works without bitsandbytes."""
+        key = query if key is None else key
+        value = query if value is None else value
+        
+        # Get embeddings directly without quantization
+        q = self.q_proj(query)
+        k = self.k_proj(key)
+        v = self.v_proj(value)
+        
+        # Reshape for attention
+        batch_size, seq_len, _ = query.shape
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, k.size(1), self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, v.size(1), self.num_heads, self.head_dim).transpose(1, 2)
+        
+        # Compute attention
+        scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        attn = torch.softmax(scores, dim=-1)
+        output = torch.matmul(attn, v)
+        
+        # Reshape and project output
+        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+        output = self.out_proj(output)
+        
+        return output
+    
+    # Apply the patch only if needed
+    if hasattr(transformer, "MultiHeadAttention"):
+        transformer.MultiHeadAttention.forward = patched_mha_forward
 
 # Apply the patch before importing from generator
 patch_moshi()
@@ -165,7 +212,9 @@ def main():
 
         # Save the audio
         output_path = args.output
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        output_dir = os.path.dirname(os.path.abspath(output_path))
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
         torchaudio.save(
             output_path,
             audio.unsqueeze(0).cpu(),
