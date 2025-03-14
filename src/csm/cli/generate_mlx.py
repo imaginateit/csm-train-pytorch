@@ -594,15 +594,41 @@ else:
                 
             # Convert to tensor for torchaudio if needed
             if isinstance(audio, np.ndarray):
+                # Ensure correct format and range for audio
+                if audio.dtype != np.float32:
+                    if args.debug:
+                        print(f"Converting audio from {audio.dtype} to float32")
+                    audio = audio.astype(np.float32)
+                
+                # Normalize if needed to ensure no clipping
+                max_amp = np.max(np.abs(audio))
+                if max_amp > 1.0:
+                    if args.debug:
+                        print(f"Normalizing audio (max amplitude was {max_amp})")
+                    audio = audio / max_amp * 0.9
+                
                 audio_tensor = torch.from_numpy(audio)
             elif isinstance(audio, torch.Tensor):
                 audio_tensor = audio
+                
+                # Normalize if needed to ensure no clipping
+                max_amp = torch.max(torch.abs(audio_tensor)).item()
+                if max_amp > 1.0:
+                    if args.debug:
+                        print(f"Normalizing audio tensor (max amplitude was {max_amp})")
+                    audio_tensor = audio_tensor / max_amp * 0.9
             else:
                 raise ValueError(f"Unexpected audio type: {type(audio)}")
                 
             # Ensure audio has the right shape
             if len(audio_tensor.shape) == 1:
                 audio_tensor = audio_tensor.unsqueeze(0)
+                
+            # Verify the shape and values before saving
+            if args.debug:
+                print(f"Audio tensor shape: {audio_tensor.shape}")
+                print(f"Audio tensor min: {audio_tensor.min().item()}, max: {audio_tensor.max().item()}")
+                print(f"Audio tensor dtype: {audio_tensor.dtype}")
                 
             # Save to WAV file
             torchaudio.save(

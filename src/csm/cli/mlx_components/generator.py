@@ -711,20 +711,46 @@ class MLXGenerator:
             else:
                 # Finally, as a last resort, create a dummy sine wave for debugging
                 print("WARNING: No decoding method found, returning dummy audio")
-                # Create a more complex sine wave as dummy audio
+                # Create a more complex sine wave as dummy audio that should play on all devices
                 sample_rate = 24000
                 duration = 3.0  # seconds
-                frequencies = [440, 550, 660]  # Multiple frequencies for a more interesting sound
+                
+                # Generate speech-like formants for better results
                 t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
-                audio = np.zeros_like(t)
-                for i, freq in enumerate(frequencies):
-                    audio += 0.2 * np.sin(2 * np.pi * freq * t + i*0.5)
+                
+                # Base frequency (like human voice fundamental)
+                f0 = 120  # Hz - average male voice pitch
+                
+                # First create the carrier wave (fundamental frequency)
+                audio = 0.5 * np.sin(2 * np.pi * f0 * t)
+                
+                # Add formants (typical for speech vowels)
+                formants = [500, 1500, 2500]  # Common formant frequencies for speech
+                formant_amplitudes = [0.5, 0.3, 0.1]  # Decreasing amplitude for higher formants
+                
+                for i, (freq, amp) in enumerate(zip(formants, formant_amplitudes)):
+                    # Add slight vibrato to make it sound more natural
+                    vibrato = 5 * np.sin(2 * np.pi * 5 * t)  # 5Hz vibrato with 5Hz depth
+                    audio += amp * np.sin(2 * np.pi * (freq + vibrato) * t)
+                
+                # Normalize to range [-0.8, 0.8] to avoid clipping
+                audio = 0.8 * audio / np.max(np.abs(audio))
+                
+                # Apply amplitude modulation for speech-like rhythm (syllables)
+                syllable_rate = 4  # 4 Hz (typical speech syllable rate)
+                env = 0.5 + 0.5 * np.sin(2 * np.pi * syllable_rate * t - np.pi/2)
+                env = np.power(env, 0.5)  # Make the envelope more speech-like
+                audio *= env
+                
                 # Apply fade in/out
                 fade_samples = int(0.1 * sample_rate)
                 fade_in = np.linspace(0, 1, fade_samples)
                 fade_out = np.linspace(1, 0, fade_samples)
                 audio[:fade_samples] *= fade_in
                 audio[-fade_samples:] *= fade_out
+                
+                # Convert to float32 explicitly for maximum compatibility
+                audio = audio.astype(np.float32)
         else:
             raise ValueError("Model must have decode_audio, vocoder, decode method, or codec.decode")
                 
