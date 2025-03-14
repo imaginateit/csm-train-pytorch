@@ -38,6 +38,7 @@ dev = [
 
 [project.scripts]
 csm-generate = "csm.cli.generate:main"
+csm-generate-cpu = "csm.cli.generate_cpu:main"
 csm-verify = "csm.cli.verify:main"
 
 [tool.setuptools]
