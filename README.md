@@ -1,10 +1,6 @@
 # CSM - Text-to-Speech Made Easy
 
-![CSM Banner](https://i.imgur.com/MCKY1FP.png)
-
 CSM (Conversational Speech Model) is a powerful text-to-speech system that generates natural-sounding voices from text. This fork adds enhanced user experience, improved performance, and Apple Silicon acceleration.
-
-**✨ [Try it now](https://huggingface.co/spaces/sesame/csm-1b) on HuggingFace Spaces**
 
 ## 🚀 Getting Started in 30 Seconds
 
@@ -162,6 +158,7 @@ CSM consists of two main components:
 2. **Audio Decoder**: A 100M parameter Llama 3.2 decoder for generating audio tokens
 
 The model generates audio by:
+
 1. Encoding text and optional audio context
 2. Generating RVQ (Residual Vector Quantization) tokens using the dual transformer architecture
 3. Decoding tokens to waveform using the Mimi codec
@@ -175,6 +172,7 @@ The model generates audio by:
 ### MLX Acceleration
 
 The MLX implementation provides:
+
 - Native matrix operations on Apple Silicon
 - Optimized embedding and sampling operations
 - Custom KV cache implementation for efficient autoregressive generation
