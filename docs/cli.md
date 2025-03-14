@@ -10,24 +10,37 @@ To use the CSM command-line tools, install the package:
 pip install -e .
 ```
 
+For Apple Silicon acceleration (recommended for Mac users):
+
+```bash
+pip install -e ".[apple]"
+```
+
 This will make the command-line tools available in your environment.
 
 ## Generating Speech
 
-CSM provides two commands for generating speech from text:
+CSM provides three commands for generating speech from text:
 
 - `csm-generate`: Standard version (requires CUDA GPU)
-- `csm-generate-cpu`: CPU-compatible version for Mac and systems without specialized GPU libraries
+- `csm-generate-cpu`: CPU-compatible version for systems without specialized GPU libraries
+- `csm-generate-mlx`: MLX-accelerated version for Apple Silicon Macs
 
 ### Basic Usage
 
-Generate speech from text (CPU version):
+Generate speech from text on Mac with Apple Silicon (recommended):
+
+```bash
+csm-generate-mlx --text "Hello, this is a test."
+```
+
+Generate speech from text on CPU:
 
 ```bash
 csm-generate-cpu --text "Hello, this is a test."
 ```
 
-This will:
+These commands will:
 1. Download the model checkpoint from HuggingFace (on first run)
 2. Generate audio for the provided text
 3. Save the audio to `audio.wav` in the current directory
@@ -42,16 +55,17 @@ This will:
 --max-audio-length-ms MS  Maximum audio length in milliseconds (default: 10000)
 --temperature TEMP        Sampling temperature (default: 0.9)
 --topk K                  Top-k sampling parameter (default: 50)
+--debug                   Enable debug mode with more detailed output
 ```
 
-The `csm-generate` command also accepts a `--device` parameter to select between "cuda" and "cpu", but `csm-generate-cpu` always uses the CPU.
+The `csm-generate` command accepts a `--device` parameter to select between "cuda" and "cpu", but the other commands automatically target specific hardware.
 
 ### Using Context
 
 You can provide context to the model to make the generated speech more natural:
 
 ```bash
-csm-generate-cpu \
+csm-generate-mlx \
   --text "I'm doing well, thank you." \
   --context-audio utterance_1.wav \
   --context-text "Hello, how are you doing today?" \
@@ -61,7 +75,7 @@ csm-generate-cpu \
 You can provide multiple context segments:
 
 ```bash
-csm-generate-cpu \
+csm-generate-mlx \
   --text "Me too, this is some cool stuff huh?" \
   --speaker 1 \
   --context-audio utterance_1.wav utterance_2.wav utterance_3.wav \
@@ -81,14 +95,16 @@ csm-verify --audio-path audio.wav
 
 This will analyze the audio file and report whether it contains a CSM watermark.
 
-## Troubleshooting
+## Platform-Specific Information
 
-### Mac/CPU Users
+### Mac Users
 
-If you encounter errors related to missing CUDA or GPU libraries, use the `csm-generate-cpu` command instead of `csm-generate`. This version includes patches to work without GPU-specific libraries like `triton` and `bitsandbytes`.
+Mac users have three options, in order of preference:
 
-### Common Errors
+1. **MLX Acceleration** (recommended for Apple Silicon): Install with `pip install -e ".[apple]"` and use `csm-generate-mlx`
+2. **CPU Generation**: Use `csm-generate-cpu` for simpler compatibility
+3. **PyTorch Metal**: Use standard `csm-generate` with `--device cpu` (slower)
 
-- **ModuleNotFoundError: No module named 'triton'** or **No module named 'bitsandbytes'**: Use the `csm-generate-cpu` command instead.
-- **Error loading model**: Ensure your internet connection is working to download the model from HuggingFace.
-- **CUDA/GPU errors**: If you're on a Mac or system without compatible GPU, use the CPU version with `csm-generate-cpu`.
+### Linux/Windows with NVIDIA GPU
+
+Use the standard `csm-generate` command with `--device cuda` for best performance.
