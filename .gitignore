@@ -67,3 +67,4 @@ pip-delete-this-directory.txt
 # CSM specific
 ckpt.pt
 audio.wav
+removed_files/
