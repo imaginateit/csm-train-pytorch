@@ -16,6 +16,16 @@ For Apple Silicon acceleration (recommended for Mac users):
 pip install -e ".[apple]"
 ```
 
+For fine-tuning capabilities, install with training dependencies:
+
+```bash
+# Basic training (all platforms)
+pip install -e ".[train]"
+
+# Training with Apple Silicon acceleration
+pip install -e ".[train,apple]"
+```
+
 This will make the command-line tools available in your environment.
 
 ## Generating Speech
@@ -151,7 +161,122 @@ Mac users have two options, in order of preference:
 
 Use the standard `csm-generate` command with `--device cuda` for best performance.
 
-### Known Issues
+### Fine-Tuning Models
+
+CSM provides two commands for fine-tuning models:
+
+- `csm-train`: Standard training on all platforms (CPU or GPU)
+- `csm-train-mlx`: MLX-accelerated training for Apple Silicon Macs
+
+### Data Preparation
+
+For fine-tuning, you'll need:
+
+1. **Audio files**: .wav format, ideally 24kHz sample rate
+2. **Transcript files**: .txt files with matching filenames to audio
+3. **Optional alignments**: .json files with word-level timings
+
+Directory structure:
+```
+data/
+  ├── audio/
+  │   ├── sample1.wav
+  │   ├── sample2.wav
+  │   └── ...
+  ├── transcripts/
+  │   ├── sample1.txt
+  │   ├── sample2.txt
+  │   └── ...
+  └── alignments/
+      ├── sample1.json  # optional
+      ├── sample2.json  # optional
+      └── ...
+```
+
+### Basic Training Usage
+
+Start training with PyTorch (all platforms):
+
+```bash
+csm-train \
+  --model-path /path/to/csm_1b.pt \
+  --audio-dir data/audio \
+  --transcript-dir data/transcripts \
+  --output-dir my_finetuned_model \
+  --speaker-id 5
+```
+
+Start training with MLX (Apple Silicon only):
+
+```bash
+csm-train-mlx \
+  --model-path /path/to/csm_1b.pt \
+  --audio-dir data/audio \
+  --transcript-dir data/transcripts \
+  --output-dir my_finetuned_model \
+  --speaker-id 5 \
+  --autotune
+```
+
+### Training Options
+
+#### Data Options
+- `--model-path PATH`: Path to CSM model checkpoint (required)
+- `--audio-dir DIR`: Directory with audio files (required)
+- `--transcript-dir DIR`: Directory with transcript files (required)
+- `--alignment-dir DIR`: Directory with word-level alignments
+- `--speaker-id ID`: Speaker ID to assign (0-9, default: 0)
+- `--val-split RATIO`: Portion of data for validation (0.0-1.0, default: 0.1)
+
+#### Training Configuration
+- `--learning-rate RATE`: Base learning rate (default: 1e-5)
+- `--epochs NUM`: Number of training epochs (default: 5)
+- `--batch-size SIZE`: Batch size for training (default: 2)
+- `--accumulation-steps STEPS`: Gradient accumulation steps (default: 4)
+- `--semantic-weight VAL`: Weight for semantic token loss (default: 100.0)
+- `--acoustic-weight VAL`: Weight for acoustic token loss (default: 1.0)
+- `--freeze-backbone`: Freeze backbone parameters
+- `--freeze-decoder`: Freeze decoder parameters
+- `--freeze-embeddings`: Freeze embedding parameters
+- `--resume-from PATH`: Path to checkpoint to resume from
+
+#### MLX-Specific Options
+- `--autotune`: Enable MLX kernel autotuning
+- `--num-threads NUM`: Number of threads for MLX operations (default: 4)
+
+### Fine-Tuning Strategies
+
+#### Voice Adaptation
+
+```bash
+csm-train \
+  --model-path /path/to/csm_1b.pt \
+  --audio-dir my_voice_samples \
+  --transcript-dir my_voice_transcripts \
+  --output-dir my_voice_model \
+  --speaker-id 5 \
+  --freeze-backbone \
+  --learning-rate 2e-5 \
+  --semantic-weight 20.0 \
+  --epochs 10
+```
+
+#### Style Tuning
+
+```bash
+csm-train \
+  --model-path /path/to/csm_1b.pt \
+  --audio-dir excited_style_samples \
+  --transcript-dir excited_style_transcripts \
+  --output-dir excited_style_model \
+  --speaker-id 3 \
+  --learning-rate 1e-5 \
+  --semantic-weight 50.0 \
+  --epochs 5
+```
+
+## Known Issues
 
 - **Warning messages**: You may see FutureWarning messages related to torch.load. These are harmless and will be addressed in a future PyTorch version.
 - **MLX fallback**: If MLX is not available, the MLX command will automatically fall back to the standard implementation.
+- **MLX training implementation**: The MLX training module is in early development. Performance may vary across different Apple Silicon devices.
