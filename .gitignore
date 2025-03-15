@@ -71,3 +71,13 @@ removed_files/
 temp_files/
 *.pt
 *.wav
+
+# LoRA testing and output
+benchmark_results/
+hf_finetuned_*/
+lora_cli_output/
+lora_hf_output*/
+test_lora_output/
+test_output*/
+test_data/
+tests/data/
