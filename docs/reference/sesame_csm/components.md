@@ -2,7 +2,7 @@
 
 ## Backbone Transformer (LLaMA-based)
 
-The backbone of CSM is a Transformer network based on the LLaMA architecture (a GPT-style decoder-only Transformer). It serves as the main _sequence model_ that reads the combined text and audio token sequence. 
+The backbone of CSM is a Transformer network based on the LLaMA architecture (a GPT-style decoder-only Transformer). It serves as the main _sequence model_ that reads the combined text and audio token sequence.
 
 ### Architecture
 - In the largest "Medium" configuration, the backbone has around 8 billion parameters

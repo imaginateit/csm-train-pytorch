@@ -21,7 +21,7 @@ This documentation has been split into multiple pages for better readability and
    - [Deployment, Scalability, and Hardware](inference.md#deployment-scalability-and-hardware)
 
 4. **[Model Architecture Details](model_architecture.md)**
-   - [Topology and Component Interaction](model_architecture.md#topology-and-component-interaction-block-diagram-explanation)
+   - [Topology and Component Interaction](model_architecture.md#topology-and-component-interaction)
    - [Helium and Depth Transformer Details](model_architecture.md#helium-and-depth-transformer-details)
    - [Mimi Audio Codec Architecture](model_architecture.md#mimi-audio-codec-architecture)
    - [Input/Output Representations and Tokenization](model_architecture.md#inputoutput-representations-and-tokenization)

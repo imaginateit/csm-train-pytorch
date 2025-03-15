@@ -2,9 +2,12 @@
 
 ## Overall Architecture
 
-CSM uses a _dual-Transformer_ architecture that operates on interleaved text and speech token inputs. It consists of two autoregressive Transformer models working in tandem: a large **Backbone Transformer** and a smaller **Audio Decoder Transformer**.
+CSM uses a _dual-Transformer_ architecture that operates on interleaved text and speech token inputs. It consists of two autoregressive Transformer models working in tandem:
 
-The backbone is a multimodal model that processes both textual tokens (from the conversation transcript) and audio tokens (from previous speech, represented as discrete codes) in a single sequence. Its role is to model the high-level content and context – effectively understanding "what to say and how to say it" at a coarse level. 
+1. A large **Backbone Transformer**
+2. A smaller **Audio Decoder Transformer**
+
+The backbone is a multimodal model that processes both textual tokens (from the conversation transcript) and audio tokens (from previous speech, represented as discrete codes) in a single sequence. Its role is to model the high-level content and context – effectively understanding "what to say and how to say it" at a coarse level.
 
 The output of the backbone at each time step is not directly speech, but the first level of an audio code (the **zeroth codebook token**) which captures the semantic and prosodic content of the next chunk of speech. The second model, the audio decoder, then takes this predicted code and generates the remaining audio codebook tokens needed to produce the final speech waveform for that time step.
 
@@ -13,6 +16,9 @@ In essence, the backbone produces a _context-aware linguistic+prosodic summary_ 
 ## Model Visualization
 
 CSM's dual-Transformer architecture at inference:
+
+![CSM Model Architecture](https://i.imgur.com/placeholder.png)
+
 - Text tokens (T) and audio tokens (A) from the conversation history are interleaved and fed into the large Backbone Transformer
 - The Backbone Transformer predicts the next semantic audio token (codebook 0)
 - The smaller Audio Decoder then generates the remaining acoustic tokens (codebooks 1 through N−1) needed for that frame
@@ -20,7 +26,7 @@ CSM's dual-Transformer architecture at inference:
 
 ## Dual-Transformer Framework
 
-The backbone and decoder operate in a loop to produce conversational speech. During generation, the model maintains a sequence of tokens representing the dialogue so far: this includes text tokens for things that were said, plus audio tokens for how they were said. 
+The backbone and decoder operate in a loop to produce conversational speech. During generation, the model maintains a sequence of tokens representing the dialogue so far: this includes text tokens for things that were said, plus audio tokens for how they were said.
 
 At a given step, backbone takes in the recent text prompt (the new sentence it needs to speak) along with prior context tokens, and autoregressively emits the next audio code (semantic code) for the response. The decoder immediately takes that code and generates the detailed acoustic codes (e.g. timbre, fine intonation) for the corresponding audio frame.
 

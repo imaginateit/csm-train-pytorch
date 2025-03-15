@@ -10,27 +10,27 @@ The documentation is organized into separate directories for each major technolo
 
 The [moshi/](./moshi/) directory contains comprehensive documentation about Moshi, a full-duplex speech-text model architecture developed by Kyutai Labs.
 
-- [moshi/index.md](./moshi/index.md): Overview and table of contents
-- [moshi/architecture.md](./moshi/architecture.md): Core components and architecture
-- [moshi/training.md](./moshi/training.md): Training procedures and data
-- [moshi/inference.md](./moshi/inference.md): Inference and real-time processing
-- [moshi/model_architecture.md](./moshi/model_architecture.md): Detailed model architecture
-- [moshi/implementation.md](./moshi/implementation.md): Implementation details
-- [moshi/ethics.md](./moshi/ethics.md): Ethical and safety considerations
+- [moshi/index.md](./moshi/index.md): Overview and table of contents for all Moshi documentation
+- [moshi/architecture.md](./moshi/architecture.md): Core components and architectural design of the Moshi model
+- [moshi/training.md](./moshi/training.md): Training procedures, datasets, and optimization techniques
+- [moshi/inference.md](./moshi/inference.md): Real-time inference, streaming, and deployment strategies
+- [moshi/model_architecture.md](./moshi/model_architecture.md): Detailed technical breakdown of model topology and components
+- [moshi/implementation.md](./moshi/implementation.md): Code structure, validation, and engineering challenges
+- [moshi/ethics.md](./moshi/ethics.md): Ethical considerations, safety measures, and responsible usage guidelines
 
 ### Sesame CSM Documentation
 
 The [sesame_csm/](./sesame_csm/) directory contains detailed documentation about Sesame AI Lab's Conversational Speech Model.
 
-- [sesame_csm/index.md](./sesame_csm/index.md): Overview and table of contents
-- [sesame_csm/introduction.md](./sesame_csm/introduction.md): Introduction to Sesame AI Lab and CSM
-- [sesame_csm/architecture.md](./sesame_csm/architecture.md): Model architecture
-- [sesame_csm/components.md](./sesame_csm/components.md): Technical components
-- [sesame_csm/training.md](./sesame_csm/training.md): Training pipeline
-- [sesame_csm/inference.md](./sesame_csm/inference.md): Inference and processing
-- [sesame_csm/implementation.md](./sesame_csm/implementation.md): Code implementation
-- [sesame_csm/comparison.md](./sesame_csm/comparison.md): Comparison with Moshi
-- [sesame_csm/considerations.md](./sesame_csm/considerations.md): Implementation considerations
+- [sesame_csm/index.md](./sesame_csm/index.md): Overview and table of contents for all CSM documentation
+- [sesame_csm/introduction.md](./sesame_csm/introduction.md): Introduction to Sesame AI Lab and the CSM project goals
+- [sesame_csm/architecture.md](./sesame_csm/architecture.md): Dual-transformer architecture and design principles
+- [sesame_csm/components.md](./sesame_csm/components.md): Technical components including backbone transformer and Mimi codec
+- [sesame_csm/training.md](./sesame_csm/training.md): Training methodology, data processing, and compute amortization techniques
+- [sesame_csm/inference.md](./sesame_csm/inference.md): Low-latency inference strategies and deployment optimization
+- [sesame_csm/implementation.md](./sesame_csm/implementation.md): Open-source code resources and implementation guides
+- [sesame_csm/comparison.md](./sesame_csm/comparison.md): Detailed comparison between CSM and Moshi architectures
+- [sesame_csm/considerations.md](./sesame_csm/considerations.md): Practical considerations for implementing CSM from scratch
 
 ## Documentation Format
 
@@ -40,6 +40,13 @@ All documentation is written in Markdown for easy viewing on GitHub and other Ma
 - Structured sections with appropriate heading levels
 - Navigation links to related documentation
 - References to source materials where applicable
+
+## Model Capabilities
+
+The documented systems enable:
+
+- **Moshi**: Full-duplex, real-time spoken dialogue with concurrent speech input and output
+- **CSM**: High-quality, context-aware speech generation with natural prosody and emotion
 
 ## Contributing
 

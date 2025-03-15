@@ -1,4 +1,4 @@
-# ML Model Architecture and Layout
+# Model Architecture Details
 
 In this section, we delve deeper into Moshi's model topology, providing a detailed breakdown of each component and how they interact. We discuss various architectural innovations, parameter counts and efficiency, input/output representations, and how Moshi handles context and prompting. This is effectively a **blueprint** of Moshi's neural network, suitable for an engineer wanting to implement it.
 
