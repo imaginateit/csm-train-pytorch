@@ -72,6 +72,14 @@ def create_tiny_model(
     # Create model parameters dictionary
     model_params = {}
     
+    # Add model configuration
+    model_params["config.model_type"] = np.array([1], dtype=np.int32)  # CSM model
+    model_params["config.hidden_size"] = np.array([hidden_size], dtype=np.int32)
+    model_params["config.num_layers"] = np.array([num_layers], dtype=np.int32)
+    model_params["config.num_heads"] = np.array([num_heads], dtype=np.int32)
+    model_params["config.head_dim"] = np.array([head_dim], dtype=np.int32)
+    model_params["config.num_kv_heads"] = np.array([num_heads], dtype=np.int32)
+    
     # Add text embedding
     model_params["backbone.text_embedding.weight"] = np.random.normal(
         0, 0.02, (text_vocab_size, hidden_size)
@@ -87,41 +95,68 @@ def create_tiny_model(
         model_params[f"{layer_prefix}.post_attention_layernorm_weight"] = np.ones(hidden_size).astype(np.float32)
         model_params[f"{layer_prefix}.post_attention_layernorm_bias"] = np.zeros(hidden_size).astype(np.float32)
         
-        # Q/K/V projections
-        model_params[f"{layer_prefix}.attn.q_proj_weight"] = np.random.normal(
+        # Q/K/V projections - create all naming variants for compatibility
+        # Primary names that match the model structure
+        model_params[f"{layer_prefix}.attn.q_proj.weight"] = np.random.normal(
             0, 0.02, (hidden_size, hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.k_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.attn.k_proj.weight"] = np.random.normal(
             0, 0.02, (hidden_size, hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.v_proj_weight"] = np.random.normal(
-            0, 0.02, (hidden_size, hidden_size)
-        ).astype(np.float32)
-        
-        # Output projection
-        model_params[f"{layer_prefix}.attn.o_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.attn.v_proj.weight"] = np.random.normal(
             0, 0.02, (hidden_size, hidden_size)
         ).astype(np.float32)
         
-        # MLP weights
-        model_params[f"{layer_prefix}.mlp.gate_proj_weight"] = np.random.normal(
+        # Alternative names for different model implementations
+        model_params[f"{layer_prefix}.attn.q_proj_weight"] = model_params[f"{layer_prefix}.attn.q_proj.weight"].copy()
+        model_params[f"{layer_prefix}.attn.k_proj_weight"] = model_params[f"{layer_prefix}.attn.k_proj.weight"].copy()
+        model_params[f"{layer_prefix}.attn.v_proj_weight"] = model_params[f"{layer_prefix}.attn.v_proj.weight"].copy()
+        
+        # Output projection - both naming conventions
+        model_params[f"{layer_prefix}.attn.o_proj.weight"] = np.random.normal(
+            0, 0.02, (hidden_size, hidden_size)
+        ).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.o_proj_weight"] = model_params[f"{layer_prefix}.attn.o_proj.weight"].copy()
+        
+        # MLP weights with both naming patterns
+        # Primary names with dotted notation
+        model_params[f"{layer_prefix}.mlp.gate_proj.weight"] = np.random.normal(
             0, 0.02, (hidden_size * 4, hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.up_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.mlp.up_proj.weight"] = np.random.normal(
             0, 0.02, (hidden_size * 4, hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.down_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.mlp.down_proj.weight"] = np.random.normal(
             0, 0.02, (hidden_size, hidden_size * 4)
         ).astype(np.float32)
         
-        # Add bias terms
-        model_params[f"{layer_prefix}.attn.q_proj_bias"] = np.zeros(hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.k_proj_bias"] = np.zeros(hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.v_proj_bias"] = np.zeros(hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.o_proj_bias"] = np.zeros(hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.gate_proj_bias"] = np.zeros(hidden_size * 4).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.up_proj_bias"] = np.zeros(hidden_size * 4).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.down_proj_bias"] = np.zeros(hidden_size).astype(np.float32)
+        # Underscore notation for compatibility
+        model_params[f"{layer_prefix}.mlp.gate_proj_weight"] = model_params[f"{layer_prefix}.mlp.gate_proj.weight"].copy()
+        model_params[f"{layer_prefix}.mlp.up_proj_weight"] = model_params[f"{layer_prefix}.mlp.up_proj.weight"].copy()
+        model_params[f"{layer_prefix}.mlp.down_proj_weight"] = model_params[f"{layer_prefix}.mlp.down_proj.weight"].copy()
+        
+        # Add bias terms with both naming conventions
+        # QKV bias terms - dotted notation
+        model_params[f"{layer_prefix}.attn.q_proj.bias"] = np.zeros(hidden_size).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.k_proj.bias"] = np.zeros(hidden_size).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.v_proj.bias"] = np.zeros(hidden_size).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.o_proj.bias"] = np.zeros(hidden_size).astype(np.float32)
+        
+        # QKV bias terms - underscore notation (for compatibility)
+        model_params[f"{layer_prefix}.attn.q_proj_bias"] = model_params[f"{layer_prefix}.attn.q_proj.bias"].copy()
+        model_params[f"{layer_prefix}.attn.k_proj_bias"] = model_params[f"{layer_prefix}.attn.k_proj.bias"].copy()
+        model_params[f"{layer_prefix}.attn.v_proj_bias"] = model_params[f"{layer_prefix}.attn.v_proj.bias"].copy()
+        model_params[f"{layer_prefix}.attn.o_proj_bias"] = model_params[f"{layer_prefix}.attn.o_proj.bias"].copy()
+        
+        # MLP bias terms - both notations
+        model_params[f"{layer_prefix}.mlp.gate_proj.bias"] = np.zeros(hidden_size * 4).astype(np.float32)
+        model_params[f"{layer_prefix}.mlp.up_proj.bias"] = np.zeros(hidden_size * 4).astype(np.float32)
+        model_params[f"{layer_prefix}.mlp.down_proj.bias"] = np.zeros(hidden_size).astype(np.float32)
+        
+        # MLP bias terms - underscore notation (for compatibility)
+        model_params[f"{layer_prefix}.mlp.gate_proj_bias"] = model_params[f"{layer_prefix}.mlp.gate_proj.bias"].copy()
+        model_params[f"{layer_prefix}.mlp.up_proj_bias"] = model_params[f"{layer_prefix}.mlp.up_proj.bias"].copy()
+        model_params[f"{layer_prefix}.mlp.down_proj_bias"] = model_params[f"{layer_prefix}.mlp.down_proj.bias"].copy()
         
         # Rotary embeddings
         if include_kv_cache:
@@ -159,41 +194,68 @@ def create_tiny_model(
         model_params[f"{layer_prefix}.post_attention_layernorm_weight"] = np.ones(decoder_hidden_size).astype(np.float32)
         model_params[f"{layer_prefix}.post_attention_layernorm_bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
         
-        # Q/K/V projections
-        model_params[f"{layer_prefix}.attn.q_proj_weight"] = np.random.normal(
+        # Q/K/V projections with both naming patterns
+        # Primary names that match the model structure
+        model_params[f"{layer_prefix}.attn.q_proj.weight"] = np.random.normal(
             0, 0.02, (decoder_hidden_size, decoder_hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.k_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.attn.k_proj.weight"] = np.random.normal(
             0, 0.02, (decoder_hidden_size, decoder_hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.v_proj_weight"] = np.random.normal(
-            0, 0.02, (decoder_hidden_size, decoder_hidden_size)
-        ).astype(np.float32)
-        
-        # Output projection
-        model_params[f"{layer_prefix}.attn.o_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.attn.v_proj.weight"] = np.random.normal(
             0, 0.02, (decoder_hidden_size, decoder_hidden_size)
         ).astype(np.float32)
         
-        # MLP weights
-        model_params[f"{layer_prefix}.mlp.gate_proj_weight"] = np.random.normal(
+        # Alternative names for different model implementations
+        model_params[f"{layer_prefix}.attn.q_proj_weight"] = model_params[f"{layer_prefix}.attn.q_proj.weight"].copy()
+        model_params[f"{layer_prefix}.attn.k_proj_weight"] = model_params[f"{layer_prefix}.attn.k_proj.weight"].copy()
+        model_params[f"{layer_prefix}.attn.v_proj_weight"] = model_params[f"{layer_prefix}.attn.v_proj.weight"].copy()
+        
+        # Output projection with both naming patterns
+        model_params[f"{layer_prefix}.attn.o_proj.weight"] = np.random.normal(
+            0, 0.02, (decoder_hidden_size, decoder_hidden_size)
+        ).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.o_proj_weight"] = model_params[f"{layer_prefix}.attn.o_proj.weight"].copy()
+        
+        # MLP weights with both naming patterns
+        # Primary names with dotted notation
+        model_params[f"{layer_prefix}.mlp.gate_proj.weight"] = np.random.normal(
             0, 0.02, (decoder_hidden_size * 4, decoder_hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.up_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.mlp.up_proj.weight"] = np.random.normal(
             0, 0.02, (decoder_hidden_size * 4, decoder_hidden_size)
         ).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.down_proj_weight"] = np.random.normal(
+        model_params[f"{layer_prefix}.mlp.down_proj.weight"] = np.random.normal(
             0, 0.02, (decoder_hidden_size, decoder_hidden_size * 4)
         ).astype(np.float32)
         
-        # Add bias terms
-        model_params[f"{layer_prefix}.attn.q_proj_bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.k_proj_bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.v_proj_bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.attn.o_proj_bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.gate_proj_bias"] = np.zeros(decoder_hidden_size * 4).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.up_proj_bias"] = np.zeros(decoder_hidden_size * 4).astype(np.float32)
-        model_params[f"{layer_prefix}.mlp.down_proj_bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
+        # Underscore notation for compatibility
+        model_params[f"{layer_prefix}.mlp.gate_proj_weight"] = model_params[f"{layer_prefix}.mlp.gate_proj.weight"].copy()
+        model_params[f"{layer_prefix}.mlp.up_proj_weight"] = model_params[f"{layer_prefix}.mlp.up_proj.weight"].copy()
+        model_params[f"{layer_prefix}.mlp.down_proj_weight"] = model_params[f"{layer_prefix}.mlp.down_proj.weight"].copy()
+        
+        # Add bias terms with both naming conventions
+        # QKV bias terms - dotted notation
+        model_params[f"{layer_prefix}.attn.q_proj.bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.k_proj.bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.v_proj.bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
+        model_params[f"{layer_prefix}.attn.o_proj.bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
+        
+        # QKV bias terms - underscore notation (for compatibility)
+        model_params[f"{layer_prefix}.attn.q_proj_bias"] = model_params[f"{layer_prefix}.attn.q_proj.bias"].copy()
+        model_params[f"{layer_prefix}.attn.k_proj_bias"] = model_params[f"{layer_prefix}.attn.k_proj.bias"].copy()
+        model_params[f"{layer_prefix}.attn.v_proj_bias"] = model_params[f"{layer_prefix}.attn.v_proj.bias"].copy()
+        model_params[f"{layer_prefix}.attn.o_proj_bias"] = model_params[f"{layer_prefix}.attn.o_proj.bias"].copy()
+        
+        # MLP bias terms - both notations
+        model_params[f"{layer_prefix}.mlp.gate_proj.bias"] = np.zeros(decoder_hidden_size * 4).astype(np.float32)
+        model_params[f"{layer_prefix}.mlp.up_proj.bias"] = np.zeros(decoder_hidden_size * 4).astype(np.float32)
+        model_params[f"{layer_prefix}.mlp.down_proj.bias"] = np.zeros(decoder_hidden_size).astype(np.float32)
+        
+        # MLP bias terms - underscore notation (for compatibility)
+        model_params[f"{layer_prefix}.mlp.gate_proj_bias"] = model_params[f"{layer_prefix}.mlp.gate_proj.bias"].copy()
+        model_params[f"{layer_prefix}.mlp.up_proj_bias"] = model_params[f"{layer_prefix}.mlp.up_proj.bias"].copy()
+        model_params[f"{layer_prefix}.mlp.down_proj_bias"] = model_params[f"{layer_prefix}.mlp.down_proj.bias"].copy()
         
         # Rotary embeddings
         if include_kv_cache:
@@ -218,6 +280,13 @@ def create_tiny_model(
             0, 0.02, (audio_vocab_size, decoder_hidden_size)
         ).astype(np.float32)
         model_params[f"decoder.output_projection.{i}.bias"] = np.zeros(audio_vocab_size).astype(np.float32)
+        
+    # Add codebook heads for semantic loss
+    for i in range(audio_num_codebooks):
+        model_params[f"codebook{i}_head.weight"] = np.random.normal(
+            0, 0.02, (audio_vocab_size, hidden_size)
+        ).astype(np.float32)
+        model_params[f"codebook{i}_head.bias"] = np.zeros(audio_vocab_size).astype(np.float32)
     
     # Add metadata
     model_params["config"] = np.array([

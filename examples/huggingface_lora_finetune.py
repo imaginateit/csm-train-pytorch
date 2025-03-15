@@ -261,6 +261,7 @@ def run_lora_finetuning(
     lora_alpha: float = 16.0,
     batch_size: int = 2,
     epochs: int = 5,
+    save_mode: str = "both",
     logger: logging.Logger = None
 ):
     """
@@ -329,9 +330,9 @@ def run_lora_finetuning(
         logger.info(f"Fine-tuning completed with best loss: {best_loss:.6f}")
         
         # Save the model
-        logger.info("Saving fine-tuned model")
+        logger.info(f"Saving fine-tuned model in {save_mode} mode")
         model_save_path = output_dir / "fine_tuned_model.safetensors"
-        trainer.save_model(str(model_save_path), save_mode="both")
+        trainer.save_model(str(model_save_path), save_mode=save_mode)
         
         # Generate a sample
         logger.info("Generating sample with fine-tuned model")
@@ -402,6 +403,9 @@ def main():
     parser.add_argument("--log-level", type=str, default="info",
                      choices=["debug", "info", "warning", "error", "critical"],
                      help="Logging level (default: info)")
+    parser.add_argument("--save-mode", type=str, default="both",
+                     choices=["lora", "full", "both"],
+                     help="How to save the fine-tuned model (default: both)")
     
     args = parser.parse_args()
     
@@ -476,6 +480,7 @@ def main():
             lora_alpha=args.lora_alpha,
             batch_size=args.batch_size,
             epochs=args.epochs,
+            save_mode=args.save_mode,
             logger=logger
         )
         
