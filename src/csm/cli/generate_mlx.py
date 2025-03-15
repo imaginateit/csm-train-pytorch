@@ -600,36 +600,79 @@ else:
                         print(f"Converting audio from {audio.dtype} to float32")
                     audio = audio.astype(np.float32)
                 
-                # Normalize if needed to ensure no clipping
-                max_amp = np.max(np.abs(audio))
-                if max_amp > 1.0:
-                    if args.debug:
-                        print(f"Normalizing audio (max amplitude was {max_amp})")
-                    audio = audio / max_amp * 0.9
+                # Simple NaN check
+                has_nans = np.isnan(audio).any()
+                if has_nans:
+                    print("NaN values detected in audio - handling")
+                    audio = np.nan_to_num(audio, nan=0.0)
                 
+                # Normal tensor conversion
                 audio_tensor = torch.from_numpy(audio)
             elif isinstance(audio, torch.Tensor):
                 audio_tensor = audio
-                
-                # Normalize if needed to ensure no clipping
-                max_amp = torch.max(torch.abs(audio_tensor)).item()
-                if max_amp > 1.0:
-                    if args.debug:
-                        print(f"Normalizing audio tensor (max amplitude was {max_amp})")
-                    audio_tensor = audio_tensor / max_amp * 0.9
             else:
                 raise ValueError(f"Unexpected audio type: {type(audio)}")
+            
+            # Post-process the audio tensor for best output quality:
+            
+            # 1. Handle any NaN values that might be present
+            has_nans = torch.isnan(audio_tensor).any()
+            if has_nans:
+                nan_count = torch.isnan(audio_tensor).sum().item()
+                print(f"WARNING: Detected {nan_count} NaN values in audio tensor, fixing")
+                audio_tensor = torch.nan_to_num(audio_tensor, nan=0.0)
                 
-            # Ensure audio has the right shape
+                # Check if this is a systematic issue with all values
+                if nan_count > 0.5 * audio_tensor.numel():
+                    print("ALERT: More than half of audio values are NaNs!")
+                    print("This indicates a systematic issue with the token generation or decoding")
+                    
+                    # Try analyzing the tokens if available
+                    if hasattr(generator, '_last_tokens') and generator._last_tokens is not None:
+                        last_tokens = generator._last_tokens
+                        print(f"\nAnalyzing tokens that caused NaNs:")
+                        print(f"Token shape: {last_tokens.shape}")
+                        print(f"Token min/max: {last_tokens.min().item()}/{last_tokens.max().item()}")
+                        print(f"Unique token values: {last_tokens.unique().tolist()[:20]}")
+                        
+                        # Check for problematic range
+                        problematic = (last_tokens >= 1) & (last_tokens <= 31)
+                        if problematic.any():
+                            prob_count = problematic.sum().item()
+                            print(f"Found {prob_count} tokens in problematic range 1-31")
+                
+            # 2. Normalize audio tensor for proper volume
+            max_abs = torch.abs(audio_tensor).max()
+            if max_abs > 1.0:
+                print(f"Normalizing audio (max amplitude: {max_abs.item()})")
+                audio_tensor = audio_tensor / max_abs * 0.9
+            elif max_abs < 0.1:
+                print(f"Audio signal very quiet (max amplitude: {max_abs.item()}), boosting")
+                audio_tensor = audio_tensor * (0.9 / max_abs)
+                
+            # Check for too many zeros (successful NaN replacement but flat audio)
+            zero_count = (audio_tensor == 0.0).sum().item()
+            if zero_count > 0.8 * audio_tensor.numel():
+                print("WARNING: Audio tensor contains more than 80% zeros")
+                print("This suggests that the NaN replacement created mostly flat audio")
+                
+            # 3. Ensure proper shape for saving
             if len(audio_tensor.shape) == 1:
                 audio_tensor = audio_tensor.unsqueeze(0)
+            
+            # Final check for all zeros (might indicate total NaN replacement)
+            if torch.all(audio_tensor == 0):
+                print("Warning: Audio tensor contains all zeros, creating minimal placeholder audio")
+                duration = 1.0  # short duration
+                t = torch.linspace(0.0, float(duration), steps=int(sample_rate * duration))
+                audio_tensor = 0.5 * torch.sin(2 * 3.14159 * 440 * t).unsqueeze(0)
                 
-            # Verify the shape and values before saving
+            # Debug info about the final audio
             if args.debug:
-                print(f"Audio tensor shape: {audio_tensor.shape}")
-                print(f"Audio tensor min: {audio_tensor.min().item()}, max: {audio_tensor.max().item()}")
-                print(f"Audio tensor dtype: {audio_tensor.dtype}")
-                
+                print(f"Final audio tensor shape: {audio_tensor.shape}")
+                print(f"Final audio min: {audio_tensor.min().item()}, max: {audio_tensor.max().item()}")
+                print(f"Final audio dtype: {audio_tensor.dtype}")
+            
             # Save to WAV file
             torchaudio.save(
                 output_path,

@@ -68,3 +68,6 @@ pip-delete-this-directory.txt
 ckpt.pt
 audio.wav
 removed_files/
+temp_files/
+*.pt
+*.wav
