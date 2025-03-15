@@ -64,6 +64,54 @@ class MLXTransformerLayer:
         
         # Will be set during model loading
         self.params_loaded = False
+        
+    def update(self, params_dict):
+        """
+        Update layer parameters from a dictionary.
+        
+        Args:
+            params_dict: Dictionary of parameter name to parameter value
+            
+        Returns:
+            None
+        """
+        # Map parameter names to attributes
+        param_mapping = {
+            # Attention parameters
+            'attn.q_proj.weight': 'q_proj_weight',
+            'attn.q_proj.bias': 'q_proj_bias',
+            'attn.k_proj.weight': 'k_proj_weight',
+            'attn.k_proj.bias': 'k_proj_bias',
+            'attn.v_proj.weight': 'v_proj_weight',
+            'attn.v_proj.bias': 'v_proj_bias',
+            'attn.output_proj.weight': 'o_proj_weight',
+            'attn.output_proj.bias': 'o_proj_bias',
+            
+            # Layer norm parameters
+            'sa_norm.scale': 'input_layernorm_weight',
+            'sa_norm.bias': 'input_layernorm_bias',
+            'mlp_norm.scale': 'post_attention_layernorm_weight',
+            'mlp_norm.bias': 'post_attention_layernorm_bias',
+            
+            # MLP parameters
+            'mlp.w1.weight': 'gate_proj_weight',
+            'mlp.w1.bias': 'gate_proj_bias',
+            'mlp.w3.weight': 'up_proj_weight',
+            'mlp.w3.bias': 'up_proj_bias',
+            'mlp.w2.weight': 'down_proj_weight',
+            'mlp.w2.bias': 'down_proj_bias',
+        }
+        
+        # Update parameters
+        updated_count = 0
+        for param_name, attr_name in param_mapping.items():
+            if param_name in params_dict:
+                setattr(self, attr_name, params_dict[param_name])
+                updated_count += 1
+                
+        # Set params_loaded flag if we loaded a significant number of parameters
+        if updated_count >= 3:  # At least 3 parameters were updated
+            self.params_loaded = True
     
     def load_params(self, params_dict, prefix=""):
         """
@@ -471,7 +519,128 @@ class MLXTransformer:
         """Reset key-value caches for inference."""
         self.past_key_values = None
         
-    def forward(self, hidden_states, attention_mask=None, position_ids=None):
+    def parameters(self):
+        """
+        Return all model parameters as a dictionary for MLX optimizer.
+        
+        Returns:
+            Dictionary of parameter name to parameter value
+        """
+        params = {}
+        
+        # Final layer norm parameters
+        if self.final_layernorm_weight is not None:
+            params["norm.scale"] = self.final_layernorm_weight
+        if self.final_layernorm_bias is not None:
+            params["norm.bias"] = self.final_layernorm_bias
+        
+        # Layer parameters
+        for i, layer in enumerate(self.layers):
+            # Attention parameters
+            if layer.q_proj_weight is not None:
+                params[f"layers.{i}.attn.q_proj.weight"] = layer.q_proj_weight
+            if layer.q_proj_bias is not None:
+                params[f"layers.{i}.attn.q_proj.bias"] = layer.q_proj_bias
+                
+            if layer.k_proj_weight is not None:
+                params[f"layers.{i}.attn.k_proj.weight"] = layer.k_proj_weight
+            if layer.k_proj_bias is not None:
+                params[f"layers.{i}.attn.k_proj.bias"] = layer.k_proj_bias
+                
+            if layer.v_proj_weight is not None:
+                params[f"layers.{i}.attn.v_proj.weight"] = layer.v_proj_weight
+            if layer.v_proj_bias is not None:
+                params[f"layers.{i}.attn.v_proj.bias"] = layer.v_proj_bias
+                
+            if layer.o_proj_weight is not None:
+                params[f"layers.{i}.attn.output_proj.weight"] = layer.o_proj_weight
+            if layer.o_proj_bias is not None:
+                params[f"layers.{i}.attn.output_proj.bias"] = layer.o_proj_bias
+            
+            # Layer norm parameters
+            if layer.input_layernorm_weight is not None:
+                params[f"layers.{i}.sa_norm.scale"] = layer.input_layernorm_weight
+            if layer.input_layernorm_bias is not None:
+                params[f"layers.{i}.sa_norm.bias"] = layer.input_layernorm_bias
+                
+            if layer.post_attention_layernorm_weight is not None:
+                params[f"layers.{i}.mlp_norm.scale"] = layer.post_attention_layernorm_weight
+            if layer.post_attention_layernorm_bias is not None:
+                params[f"layers.{i}.mlp_norm.bias"] = layer.post_attention_layernorm_bias
+            
+            # MLP parameters
+            if layer.gate_proj_weight is not None:
+                params[f"layers.{i}.mlp.w1.weight"] = layer.gate_proj_weight
+            if layer.gate_proj_bias is not None:
+                params[f"layers.{i}.mlp.w1.bias"] = layer.gate_proj_bias
+                
+            if layer.up_proj_weight is not None:
+                params[f"layers.{i}.mlp.w3.weight"] = layer.up_proj_weight
+            if layer.up_proj_bias is not None:
+                params[f"layers.{i}.mlp.w3.bias"] = layer.up_proj_bias
+                
+            if layer.down_proj_weight is not None:
+                params[f"layers.{i}.mlp.w2.weight"] = layer.down_proj_weight
+            if layer.down_proj_bias is not None:
+                params[f"layers.{i}.mlp.w2.bias"] = layer.down_proj_bias
+        
+        return params
+        
+    def update(self, params_dict):
+        """
+        Update the model parameters from a dictionary.
+        
+        Args:
+            params_dict: Dictionary of parameter name to parameter values
+            
+        Returns:
+            None
+        """
+        # Update the parameters of each layer
+        for i, layer in enumerate(self.layers):
+            layer_params = {}
+            for name, param in params_dict.items():
+                if name.startswith(f"layers.{i}."):
+                    # Strip the prefix to get the parameter name within the layer
+                    layer_name = name[len(f"layers.{i}."):]
+                    layer_params[layer_name] = param
+            
+            # Update layer-specific parameters
+            if hasattr(layer, 'attn'):
+                # Update attention parameters
+                if 'attn.q_proj.weight' in layer_params:
+                    layer.attn.q_proj.weight = layer_params['attn.q_proj.weight']
+                if 'attn.k_proj.weight' in layer_params:
+                    layer.attn.k_proj.weight = layer_params['attn.k_proj.weight']
+                if 'attn.v_proj.weight' in layer_params:
+                    layer.attn.v_proj.weight = layer_params['attn.v_proj.weight']
+                if 'attn.output_proj.weight' in layer_params:
+                    layer.attn.output_proj.weight = layer_params['attn.output_proj.weight']
+            
+            # Update layer norm parameters
+            if hasattr(layer, 'sa_norm') and 'sa_norm.scale' in layer_params:
+                layer.sa_norm.scale = layer_params['sa_norm.scale']
+            
+            if hasattr(layer, 'mlp_norm') and 'mlp_norm.scale' in layer_params:
+                layer.mlp_norm.scale = layer_params['mlp_norm.scale']
+            
+            # Update MLP parameters
+            if hasattr(layer, 'mlp'):
+                if 'mlp.w1.weight' in layer_params:
+                    layer.mlp.w1.weight = layer_params['mlp.w1.weight']
+                if 'mlp.w2.weight' in layer_params:
+                    layer.mlp.w2.weight = layer_params['mlp.w2.weight']
+                if 'mlp.w3.weight' in layer_params:
+                    layer.mlp.w3.weight = layer_params['mlp.w3.weight']
+        
+        # Update final layer norm if present
+        if 'norm.scale' in params_dict:
+            self.final_layernorm_weight = params_dict['norm.scale']
+        
+        if 'norm.bias' in params_dict:
+            self.final_layernorm_bias = params_dict['norm.bias']
+
+    def forward(self, hidden_states, attention_mask=None, position_ids=None, input_pos=None, mask=None):
         """
         Forward pass through the transformer model.
         
@@ -479,10 +648,19 @@ class MLXTransformer:
             hidden_states: Input tensor of shape [batch_size, seq_length, hidden_size]
             attention_mask: Optional attention mask of shape [batch_size, seq_length, seq_length]
             position_ids: Optional position indices of shape [batch_size, seq_length]
+            input_pos: Alias for position_ids for compatibility
+            mask: Alias for attention_mask for compatibility
             
         Returns:
             Output tensor of shape [batch_size, seq_length, hidden_size]
         """
+        # For compatibility with different calling conventions
+        if attention_mask is None and mask is not None:
+            attention_mask = mask
+        
+        if position_ids is None and input_pos is not None:
+            position_ids = input_pos
+            
         # Process through each transformer layer
         for layer_idx, layer in enumerate(self.layers):
             hidden_states = layer.forward(

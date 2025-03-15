@@ -592,6 +592,18 @@ class MLXModelWrapper:
             return self.embedding.embed_tokens(tokens)
         else:
             raise ValueError("Embedding helper not initialized")
+            
+    def embed_tokens(self, tokens):
+        """
+        Public wrapper for _embed_tokens to ensure compatibility with training code.
+        
+        Args:
+            tokens: Input tokens
+            
+        Returns:
+            Embedded tokens
+        """
+        return self._embed_tokens(tokens)
     
     def _index_causal_mask(self, mask, positions):
         """

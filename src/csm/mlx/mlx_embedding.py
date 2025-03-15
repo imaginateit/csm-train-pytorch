@@ -38,6 +38,135 @@ class MLXEmbedding:
         self.embed_dim = embed_dim
         self.debug = debug
         
+    def update(self, params_dict):
+        """
+        Update embedding parameters from a dictionary.
+        
+        Args:
+            params_dict: Dictionary of parameter name to parameter value
+            
+        Returns:
+            None
+        """
+        # Update text embeddings if present
+        if 'text_embeddings' in params_dict:
+            self.text_embeddings = params_dict['text_embeddings']
+            if self.debug:
+                print(f"Updated text embeddings with shape {self.text_embeddings.shape}")
+        
+        # Update audio embeddings if present
+        if 'audio_embeddings' in params_dict:
+            self.audio_embeddings = params_dict['audio_embeddings']
+            if self.debug:
+                print(f"Updated audio embeddings with shape {self.audio_embeddings.shape}")
+        
+        # Update any other parameters if needed
+        if 'audio_vocab_size' in params_dict:
+            self.audio_vocab_size = params_dict['audio_vocab_size']
+        
+        if 'audio_num_codebooks' in params_dict:
+            self.audio_num_codebooks = params_dict['audio_num_codebooks']
+        
+        if 'embed_dim' in params_dict:
+            self.embed_dim = params_dict['embed_dim']
+            
+    def parameters(self):
+        """
+        Get embedding parameters as a dictionary for optimizer updates.
+        
+        Returns:
+            Dictionary of parameter name to parameter value
+        """
+        params = {}
+        
+        if self.text_embeddings is not None:
+            params['text_embeddings'] = self.text_embeddings
+            
+        if self.audio_embeddings is not None:
+            params['audio_embeddings'] = self.audio_embeddings
+            
+        return params
+        
+    def embed_tokens(self, tokens: mx.array) -> mx.array:
+        """
+        Embed tokens with both text and audio channels.
+        This function determines how to interpret the token tensor based on its shape.
+        
+        Args:
+            tokens: Tokens with shape [batch_size, seq_len, total_codebooks]
+                where total_codebooks = audio_num_codebooks + 1 (for text)
+                
+        Returns:
+            Embeddings with shape [batch_size, seq_len, embed_dim]
+        """
+        if self.debug:
+            print(f"\n==== EMBED_TOKENS DEBUG ====")
+            print(f"Input token shape: {tokens.shape}")
+            
+        try:
+            # Get batch size and sequence length
+            batch_size, seq_len, total_codebooks = tokens.shape
+            
+            # Initialize embeddings tensor
+            embeddings = mx.zeros((batch_size, seq_len, self.embed_dim))
+            
+            # Track which dimensions have been set
+            embedding_mask = mx.zeros((batch_size, seq_len), dtype=mx.bool_)
+            
+            # First handle the text tokens (last codebook)
+            text_tokens = tokens[:, :, -1]
+            text_embeddings = self.embed_text(text_tokens)
+            
+            # Initial text mask - where there are text tokens (non-zero)
+            text_mask = text_tokens != 0
+            
+            # Set embeddings for text tokens
+            for b in range(batch_size):
+                for s in range(seq_len):
+                    if text_mask[b, s]:
+                        for i in range(self.embed_dim):
+                            embeddings = embeddings.at[b, s, i].set(text_embeddings[b, s, i])
+                        embedding_mask = embedding_mask.at[b, s].set(True)
+            
+            # Handle audio tokens for each codebook (all but the last one)
+            for codebook in range(min(total_codebooks - 1, self.audio_num_codebooks)):
+                audio_tokens = tokens[:, :, codebook]
+                
+                # Only process non-zero audio tokens
+                audio_mask = audio_tokens != 0
+                
+                # Skip if no non-zero tokens in this codebook
+                if not mx.any(audio_mask):
+                    continue
+                    
+                # Get embeddings for this codebook
+                audio_embeddings = self.embed_audio(audio_tokens, codebook)
+                
+                # Apply audio embeddings where there are tokens
+                for b in range(batch_size):
+                    for s in range(seq_len):
+                        if audio_mask[b, s] and not embedding_mask[b, s]:
+                            for i in range(self.embed_dim):
+                                embeddings = embeddings.at[b, s, i].set(audio_embeddings[b, s, i])
+                            embedding_mask = embedding_mask.at[b, s].set(True)
+            
+            return embeddings
+        except Exception as e:
+            if self.debug:
+                print(f"Error in embed_tokens: {e}")
+                import traceback
+                print(traceback.format_exc())
+                
+            # Fallback - create a zero embedding
+            if len(tokens.shape) == 3:
+                batch_size, seq_len, _ = tokens.shape
+            else:
+                # Try to infer reasonable dimensions
+                batch_size = 1
+                seq_len = tokens.shape[0] if len(tokens.shape) > 0 else 1
+                
+            return mx.zeros((batch_size, seq_len, self.embed_dim))
+        
     def embed_text(self, tokens: mx.array) -> mx.array:
         """
         Embed text tokens with careful shape handling.
