@@ -40,8 +40,8 @@ def parse_args():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="mozilla-foundation/common_voice_16_0",
-        help="Hugging Face dataset to use (default: mozilla-foundation/common_voice_16_0)"
+        default="facebook/voxpopuli",
+        help="Hugging Face dataset to use (default: facebook/voxpopuli - an open dataset)"
     )
     
     parser.add_argument(
