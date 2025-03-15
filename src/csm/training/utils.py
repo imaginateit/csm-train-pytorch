@@ -231,8 +231,29 @@ def compute_loss_mlx(
             
         # Apply mask to embeddings
         try:
-            masked_embeds = embeds * mx.expand_dims(input_masks, -1)
-            h = mx.sum(masked_embeds, axis=2)
+            # Check shapes of embeds and input_masks
+            logger.debug(f"Embeds shape: {embeds.shape}, Input masks shape: {input_masks.shape}")
+            
+            # Reshape masks to match embedding dimensions
+            if len(embeds.shape) == 4 and len(input_masks.shape) == 3:
+                # Embeds: [batch, seq, codebooks, dim], Masks: [batch, seq, codebooks]
+                expanded_masks = mx.expand_dims(input_masks, -1)
+                masked_embeds = embeds * expanded_masks
+                h = mx.sum(masked_embeds, axis=2)  # Sum over codebooks
+            elif len(embeds.shape) == 3 and len(input_masks.shape) == 3:
+                # Reshape masks to be broadcastable with embeds
+                # Embeds: [batch, seq, dim], Masks: [batch, seq, codebooks]
+                # Sum the mask across codebooks
+                summed_masks = mx.sum(input_masks, axis=-1, keepdims=True)
+                # Normalize if non-zero
+                mask_sum = mx.sum(summed_masks)
+                if mask_sum > 0:
+                    summed_masks = summed_masks / mask_sum
+                h = embeds * summed_masks
+            else:
+                # Default case - just use embeds as is
+                logger.warning(f"Incompatible shapes for masking: embeds {embeds.shape}, masks {input_masks.shape}. Using unmasked embeddings.")
+                h = embeds
         except Exception as mask_e:
             logger.warning(f"Error applying mask: {mask_e}, using unmasked embeddings")
             # Fallback: try to reshape if needed

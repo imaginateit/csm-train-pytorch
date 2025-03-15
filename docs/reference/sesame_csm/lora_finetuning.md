@@ -321,6 +321,51 @@ Future versions of the LoRA implementation may include:
 - Integration with external tools for better alignment
 - Prompt-conditioned LoRA for style control
 
+## Hugging Face Dataset Integration
+
+CSM provides integration with the Hugging Face datasets library for easier fine-tuning with publicly available speech datasets. This allows you to fine-tune CSM models without having to prepare your own audio and transcript files.
+
+### Basic Usage
+
+```bash
+python examples/huggingface_lora_finetune.py \
+  --model-path /path/to/model.safetensors \
+  --output-dir ./hf_finetuned_model \
+  --dataset mozilla-foundation/common_voice_16_0 \
+  --language en \
+  --num-samples 100 \
+  --lora-r 8 \
+  --lora-alpha 16.0 \
+  --batch-size 2 \
+  --epochs 5
+```
+
+### Using Local Datasets
+
+You can also use the Hugging Face integration with local datasets:
+
+```bash
+python examples/huggingface_lora_finetune.py \
+  --model-path /path/to/model.safetensors \
+  --dataset local \
+  --audio-dir /path/to/audio \
+  --transcript-dir /path/to/transcripts \
+  --output-dir ./local_finetuned_model \
+  --lora-r 8 \
+  --lora-alpha 16.0 \
+  --batch-size 2 \
+  --epochs 5
+```
+
+### Recommended Hugging Face Datasets
+
+These datasets work well for fine-tuning speech models:
+
+- `mozilla-foundation/common_voice_16_0`: Multi-language crowd-sourced voice dataset
+- `openslr/librispeech_asr`: English audiobook recordings
+- `facebook/voxpopuli`: Multi-language European Parliament recordings
+- `jonatasgrosman/ljspeech_format`: Converted audiobooks in LJSpeech format
+
 ## References
 
 - [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)

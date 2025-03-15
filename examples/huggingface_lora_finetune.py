@@ -89,7 +89,7 @@ def setup_logger(name, log_file=None, level_name="info"):
     return logger
 
 
-def download_dataset(dataset_name: str, language: str, num_samples: int, output_dir: Path, logger: logging.Logger):
+def download_dataset(dataset_name: str, language: str, num_samples: int, output_dir: Path, logger: logging.Logger, audio_dir=None, transcript_dir=None):
     """
     Download and prepare dataset from Hugging Face Hub.
     
@@ -99,17 +99,57 @@ def download_dataset(dataset_name: str, language: str, num_samples: int, output_
         num_samples: Number of samples to download
         output_dir: Directory to save the processed data
         logger: Logger instance
+        audio_dir: Optional directory with existing audio files
+        transcript_dir: Optional directory with existing transcript files
         
     Returns:
         Tuple of (audio_dir, transcript_dir) with the processed data
     """
-    logger.info(f"Downloading dataset {dataset_name} ({language}) with {num_samples} samples")
+    # Create directories if not provided
+    if audio_dir is None:
+        audio_dir = output_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        audio_dir = Path(audio_dir)
+        
+    if transcript_dir is None:
+        transcript_dir = output_dir / "transcripts"
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        transcript_dir = Path(transcript_dir)
     
-    # Create directories
-    audio_dir = output_dir / "audio"
-    transcript_dir = output_dir / "transcripts"
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    transcript_dir.mkdir(parents=True, exist_ok=True)
+    # Check if we're using a local dataset
+    if dataset_name.lower() == "local":
+        logger.info(f"Using local dataset from {audio_dir} and {transcript_dir}")
+        
+        if not audio_dir.exists() or not transcript_dir.exists():
+            logger.error(f"Local dataset directories not found: {audio_dir}, {transcript_dir}")
+            raise ValueError("Local dataset directories not found")
+        
+        # For local dataset, just validate that the files exist and match
+        audio_files = list(audio_dir.glob("*.wav"))
+        transcript_files = list(transcript_dir.glob("*.txt"))
+        
+        logger.info(f"Found {len(audio_files)} audio files and {len(transcript_files)} transcript files")
+        
+        # Check matching files
+        audio_basenames = {f.stem for f in audio_files}
+        transcript_basenames = {f.stem for f in transcript_files}
+        matching = audio_basenames.intersection(transcript_basenames)
+        
+        logger.info(f"Found {len(matching)} matching audio-transcript pairs")
+        
+        # Take a subset if requested
+        if num_samples and num_samples < len(matching):
+            # Limit to requested number of samples
+            matching = list(matching)[:num_samples]
+            logger.info(f"Using {len(matching)} samples for fine-tuning")
+        
+        # Return the same directories since we're using local files
+        return audio_dir, transcript_dir
+    
+    # Otherwise, download from Hugging Face
+    logger.info(f"Downloading dataset {dataset_name} ({language}) with {num_samples} samples")
     
     try:
         # Load dataset
@@ -332,11 +372,17 @@ def main():
     
     # Dataset options
     parser.add_argument("--dataset", type=str, default="mozilla-foundation/common_voice_16_0",
-                     help="HuggingFace dataset to use")
+                     help="HuggingFace dataset to use (or 'local' to use local files)")
     parser.add_argument("--language", type=str, default="en",
                      help="Language to filter the dataset (default: en)")
     parser.add_argument("--num-samples", type=int, default=100,
                      help="Number of samples to use (default: 100)")
+    
+    # Local dataset options
+    parser.add_argument("--audio-dir", type=str, default=None,
+                     help="Directory containing audio files (for local dataset)")
+    parser.add_argument("--transcript-dir", type=str, default=None,
+                     help="Directory containing transcript files (for local dataset)")
     
     # Fine-tuning options
     parser.add_argument("--speaker-id", type=int, default=0,
@@ -380,23 +426,44 @@ def main():
         logger.info(f"  {arg}: {value}")
     
     try:
-        # Create a temp directory for downloaded data
-        if args.keep_data:
-            data_dir = output_dir / "data"
+        # For local dataset, use the provided directories
+        if args.dataset.lower() == "local":
+            if args.audio_dir is None or args.transcript_dir is None:
+                logger.error("When using a local dataset, --audio-dir and --transcript-dir must be provided")
+                return 1
+                
+            logger.info(f"Using local dataset from {args.audio_dir} and {args.transcript_dir}")
+            audio_dir = Path(args.audio_dir)
+            transcript_dir = Path(args.transcript_dir)
+            
+            # Validate directories
+            audio_dir, transcript_dir = download_dataset(
+                dataset_name="local",
+                language=args.language,
+                num_samples=args.num_samples,
+                output_dir=output_dir,
+                logger=logger,
+                audio_dir=audio_dir,
+                transcript_dir=transcript_dir
+            )
         else:
-            data_dir = Path(tempfile.mkdtemp(prefix="csm_hf_data_"))
-        
-        data_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Data will be stored in {data_dir}")
-        
-        # Download and prepare dataset
-        audio_dir, transcript_dir = download_dataset(
-            dataset_name=args.dataset,
-            language=args.language,
-            num_samples=args.num_samples,
-            output_dir=data_dir,
-            logger=logger
-        )
+            # Create a temp directory for downloaded data
+            if args.keep_data:
+                data_dir = output_dir / "data"
+            else:
+                data_dir = Path(tempfile.mkdtemp(prefix="csm_hf_data_"))
+            
+            data_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Data will be stored in {data_dir}")
+            
+            # Download and prepare dataset
+            audio_dir, transcript_dir = download_dataset(
+                dataset_name=args.dataset,
+                language=args.language,
+                num_samples=args.num_samples,
+                output_dir=data_dir,
+                logger=logger
+            )
         
         # Run LoRA fine-tuning
         fine_tuned_model_path = run_lora_finetuning(
@@ -413,9 +480,11 @@ def main():
         )
         
         # Clean up temporary data if not keeping
-        if not args.keep_data and not str(data_dir).startswith(str(output_dir)):
-            logger.info(f"Cleaning up temporary data directory: {data_dir}")
-            shutil.rmtree(data_dir)
+        if not args.dataset.lower() == "local" and not args.keep_data:
+            # Variable data_dir only exists in the HuggingFace dataset path
+            if 'data_dir' in locals() and not str(data_dir).startswith(str(output_dir)):
+                logger.info(f"Cleaning up temporary data directory: {data_dir}")
+                shutil.rmtree(data_dir)
         
         logger.info(f"Fine-tuning complete! Model saved to: {fine_tuned_model_path}")
         logger.info(f"Sample audio available at: {output_dir}/sample.wav")
