@@ -586,14 +586,31 @@ class CSMLoRATrainer(CSMMLXTrainer):
                 mlx_weights[k] = mx.array(v)
             
             # Update model with LoRA weights
-            params = tree_unflatten(list(mlx_weights.items()))
+            # Handle empty weights dictionary case
+            if not mlx_weights:
+                self.logger.warning("LoRA weights dictionary is empty")
+                return
             
-            if hasattr(self.model, 'update'):
-                self.model.update(params)
-                self.logger.info(f"Successfully loaded LoRA weights with {len(mlx_weights)} parameters")
-            else:
-                self.logger.error("Model does not have update method. Cannot load LoRA weights.")
-                raise ValueError("Model does not have update method. Cannot load LoRA weights.")
+            try:
+                # Try standard tree_unflatten
+                params = tree_unflatten(list(mlx_weights.items()))
+                
+                if hasattr(self.model, 'update'):
+                    self.model.update(params)
+                    self.logger.info(f"Successfully loaded LoRA weights with {len(mlx_weights)} parameters")
+                else:
+                    self.logger.error("Model does not have update method. Cannot load LoRA weights.")
+                    raise ValueError("Model does not have update method. Cannot load LoRA weights.")
+            except (IndexError, ValueError) as e:
+                self.logger.warning(f"Standard tree_unflatten failed: {e}, trying direct dictionary approach")
+                
+                # Try flat dictionary approach
+                if hasattr(self.model, 'update'):
+                    self.model.update(mlx_weights)
+                    self.logger.info(f"Successfully loaded LoRA weights using direct dictionary approach")
+                else:
+                    self.logger.error("Model does not have update method. Cannot load LoRA weights.")
+                    raise ValueError("Model does not have update method. Cannot load LoRA weights.")
             
             # Try to load metadata
             metadata_path = lora_path.replace(".safetensors", "_metadata.json")
