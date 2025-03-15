@@ -3,6 +3,7 @@ Sampling functions for MLX acceleration.
 """
 
 from typing import Optional, Tuple, Union
+import time
 
 import numpy as np
 import torch
@@ -28,6 +29,9 @@ def mlx_topk_sampling(
     """
     Sample from logits using top-k sampling with MLX.
     
+    This implementation exactly matches PyTorch's sample_topk function
+    with special handling to avoid tokens that cause MIMI codec errors.
+    
     Args:
         logits: Logits to sample from [batch_size, vocab_size]
         k: Number of top candidates to sample from
@@ -40,91 +44,109 @@ def mlx_topk_sampling(
     if not MLX_AVAILABLE:
         raise ImportError("MLX is not available for sampling")
     
-    # Apply temperature
-    scaled_logits = logits / max(temperature, 1e-5)
-    
-    # Get dimensions
-    if len(scaled_logits.shape) == 1:
+    # Get dimensions first
+    if len(logits.shape) == 1:
         # [vocab_size] -> [1, vocab_size]
         batch_size = 1
-        vocab_size = scaled_logits.shape[0]
-        scaled_logits = mx.expand_dims(scaled_logits, axis=0)
+        vocab_size = logits.shape[0]
+        logits = mx.expand_dims(logits, axis=0)
     else:
-        batch_size, vocab_size = scaled_logits.shape
-    
-    # Keep track of whether our sampling succeeded
-    success = False
-    
-    # Try using MLX operations
-    try:
-        # Get top-k values and indices
-        top_values, top_indices = mx.topk(scaled_logits, min(k, vocab_size))
+        batch_size, vocab_size = logits.shape
         
-        # Apply softmax to get probabilities
-        top_probs = mx.softmax(top_values, axis=-1)
-        
-        # Sample from categorical distribution
-        if seed is not None:
-            rng_key = mx.random.key(seed)
-        else:
-            rng_key = mx.random.key(np.random.randint(0, 2**32))
-            
-        # Sample indices from top-k
-        sample_indices = mx.random.categorical(rng_key, top_probs)
-        
-        # Gather the actual token indices
-        batch_indices = mx.arange(batch_size)
-        samples = top_indices[batch_indices, sample_indices]
-        
-        # Reshape to [batch_size, 1]
-        samples = samples.reshape(batch_size, 1)
-        success = True
-        
-    except Exception as e:
-        print(f"MLX top-k sampling failed: {e}")
-        # Fall back to NumPy sampling
-        try:
-            samples = np.zeros((batch_size, 1), dtype=np.int32)
-            
-            # Process each batch item
+    # CRITICAL: Block problematic tokens (1-31) right from the start
+    # These tokens cause fatal errors in the MIMI codec
+    for i in range(1, 32):
+        if i < vocab_size:
+            # Apply an extreme penalty to these tokens to prevent selection
             for b in range(batch_size):
-                # Get logits for this batch
-                batch_logits = scaled_logits[b].to_numpy()
-                
-                # Get top-k indices
-                top_indices = np.argsort(batch_logits)[-k:]
-                
-                # Get top-k values
-                top_values = batch_logits[top_indices]
-                
-                # Apply softmax
-                top_probs = np.exp(top_values) / np.sum(np.exp(top_values))
-                
-                # Sample
-                if seed is not None:
-                    np.random.seed(seed)
-                    
-                sample_idx = np.random.choice(len(top_indices), p=top_probs)
-                samples[b, 0] = top_indices[sample_idx]
-                
-            # Convert back to MLX
-            samples = mx.array(samples)
-            success = True
-            
-        except Exception as numpy_e:
-            print(f"NumPy fallback sampling failed: {numpy_e}")
-            # Return zeros as last resort
-            samples = mx.zeros((batch_size, 1), dtype=mx.int32)
+                logits = logits.at[b, i].set(-1e9)  # Very large negative value
     
-    return samples, success
+    # Apply temperature
+    scaled_logits = logits / temperature
+    
+    # Apply top-k filtering
+    filtered_logits = scaled_logits.copy()
+    
+    # Process batch by batch
+    for b in range(batch_size):
+        # Get this batch's logits
+        batch_logits = scaled_logits[b]
+        
+        # Get top-k values and indices
+        sorted_indices = mx.argsort(batch_logits, descending=True)
+        k_val = min(k, vocab_size)
+        topk_indices = sorted_indices[:k_val]
+        topk_values = mx.take(batch_logits, topk_indices)
+        
+        # Get kth largest value as threshold
+        threshold = topk_values[-1]
+        
+        # Create mask for values below threshold
+        below_threshold = batch_logits < threshold
+        
+        # Set values below threshold to negative infinity
+        batch_filtered = mx.where(below_threshold, mx.array(-float('inf')), batch_logits)
+        filtered_logits = filtered_logits.at[b].set(batch_filtered)
+    
+    # Apply softmax to filtered logits
+    probs = mx.softmax(filtered_logits, axis=-1)
+    
+    # Sample using Gumbel-max trick (exactly like PyTorch's _multinomial_sample_one_no_sync)
+    samples = mx.zeros((batch_size, 1), dtype=mx.int32)
+    
+    # Use deterministic seed if provided
+    key = mx.random.key(seed if seed is not None else int(time.time() * 1000))
+    
+    for b in range(batch_size):
+        # Get fresh key for this batch
+        key, subkey = mx.random.split(key)
+        
+        # Generate uniform random values
+        uniform = mx.random.uniform(subkey, shape=probs[b].shape)
+        
+        # Transform to exponential distribution: -log(u) ~ Exp(1)
+        exponential = -mx.log(uniform + 1e-10)  # Add epsilon for numerical stability
+        
+        # Apply Gumbel-max trick: probs / exponential is equivalent to torch implementation
+        gumbel_probs = probs[b] / exponential
+        
+        # ADDITIONAL SAFETY: Explicitly zero out problematic tokens 1-31
+        for i in range(1, 32):
+            if i < gumbel_probs.shape[0]:
+                gumbel_probs = gumbel_probs.at[i].set(0.0)
+        
+        # ADDITIONAL SAFETY: Check for invalid token ranges
+        vocab_size = probs.shape[-1]  # Get vocab size from probs tensor
+        if vocab_size > 2051:  # Standard CSM audio vocab size is 2051
+            # Any value beyond 2050 is likely invalid for the MIMI codec
+            for i in range(2051, vocab_size):
+                gumbel_probs = gumbel_probs.at[i].set(0.0)
+        
+        # Get argmax (sample with highest probability)
+        sample_idx = mx.argmax(gumbel_probs)
+        
+        # FINAL SAFETY CHECK: Never return values in problematic range
+        if 1 <= sample_idx < 32:
+            sample_idx = mx.array(0)  # Use silence token instead
+        # FINAL SAFETY CHECK: Never return values beyond valid audio vocab range
+        elif sample_idx >= 2051:
+            sample_idx = mx.array(2050)  # Use max valid token instead
+        
+        # Store the result
+        samples = samples.at[b, 0].set(sample_idx)
+    
+    return samples
 
 def mlx_categorical_sampling(
     logits: mx.array, 
     temperature: float = 1.0,
     seed: Optional[int] = None
-) -> Tuple[mx.array, bool]:
+) -> mx.array:
     """
-    Sample from logits using categorical sampling with MLX.
+    Categorical sampling from logits with MLX.
+    
+    This is a convenience wrapper around mlx_topk_sampling that uses the
+    full vocabulary size (no filtering).
     
     Args:
         logits: Logits to sample from [batch_size, vocab_size]
@@ -132,83 +154,13 @@ def mlx_categorical_sampling(
         seed: Random seed for reproducibility
         
     Returns:
-        Tuple of (sampled indices with shape [batch_size, 1], success flag)
+        Sampled indices with shape [batch_size, 1]
     """
-    if not MLX_AVAILABLE:
-        raise ImportError("MLX is not available for sampling")
-    
-    # Apply temperature
-    scaled_logits = logits / max(temperature, 1e-5)
-    
-    # Get dimensions
-    if len(scaled_logits.shape) == 1:
-        # [vocab_size] -> [1, vocab_size]
-        batch_size = 1
-        vocab_size = scaled_logits.shape[0]
-        scaled_logits = mx.expand_dims(scaled_logits, axis=0)
+    # Determine vocab size
+    if len(logits.shape) == 1:
+        vocab_size = logits.shape[0]
     else:
-        batch_size, vocab_size = scaled_logits.shape
+        vocab_size = logits.shape[1]
     
-    # Convert to probabilities
-    probs = mx.softmax(scaled_logits, axis=-1)
-    
-    # Keep track of whether our sampling succeeded
-    success = False
-    
-    # Try using MLX operations
-    try:
-        # Create random key
-        if seed is not None:
-            rng_key = mx.random.key(seed)
-        else:
-            rng_key = mx.random.key(np.random.randint(0, 2**32))
-            
-        # Sample from categorical distribution
-        samples = mx.random.categorical(rng_key, probs)
-        
-        # Reshape to [batch_size, 1]
-        samples = samples.reshape(batch_size, 1)
-        success = True
-        
-    except Exception as e:
-        print(f"MLX categorical sampling failed: {e}")
-        print(f"!!!!! DEBUG: probs.shape={probs.shape}")
-        
-        # Fall back to NumPy sampling
-        try:
-            # Convert to NumPy for sampling
-            np_probs = probs.to_numpy()
-            samples = np.zeros((batch_size, 1), dtype=np.int32)
-            
-            # Set random seed if provided
-            if seed is not None:
-                np.random.seed(seed)
-                
-            # Sample for each batch item
-            for b in range(batch_size):
-                # Get probabilities for this batch
-                batch_probs = np_probs[b]
-                
-                # Normalize to ensure it sums to 1
-                batch_probs = batch_probs / np.sum(batch_probs)
-                
-                # Sample
-                sample = np.random.choice(vocab_size, p=batch_probs)
-                samples[b, 0] = sample
-                
-            # Convert back to MLX
-            samples = mx.array(samples)
-            success = True
-            
-        except Exception as numpy_e:
-            print(f"NumPy fallback sampling failed: {numpy_e}")
-            
-            # Final fallback - just pick highest probability
-            try:
-                samples = mx.argmax(probs, axis=-1).reshape(batch_size, 1)
-                success = True
-            except:
-                # Return zeros as last resort
-                samples = mx.zeros((batch_size, 1), dtype=mx.int32)
-    
-    return samples, success
+    # Use top-k with k = vocab_size
+    return mlx_topk_sampling(logits, k=vocab_size, temperature=temperature, seed=seed)

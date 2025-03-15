@@ -105,12 +105,50 @@ class MLXModelWrapper:
             
         # Convert heads
         if hasattr(self.torch_model, 'codebook0_head') and hasattr(self.torch_model.codebook0_head, 'weight'):
-            self.codebook0_head = torch_to_mlx(self.torch_model.codebook0_head.weight)
+            # Ensure codebook0_head matches the expected audio_vocab_size
+            weight = self.torch_model.codebook0_head.weight
+            
+            # Check if weight shape doesn't match expected vocab size
+            if weight.shape[0] != self.args.audio_vocab_size:
+                if self.debug:
+                    print(f"WARNING: codebook0_head weight shape {weight.shape[0]} doesn't match audio_vocab_size {self.args.audio_vocab_size}")
+                    print(f"Truncating or padding to match expected size")
+                
+                # Truncate or pad to match expected vocab size
+                if weight.shape[0] > self.args.audio_vocab_size:
+                    # Truncate to expected size
+                    weight = weight[:self.args.audio_vocab_size, :]
+                else:
+                    # Need to pad with zeros
+                    padding = torch.zeros((self.args.audio_vocab_size - weight.shape[0], weight.shape[1]), 
+                                          dtype=weight.dtype, device=weight.device)
+                    weight = torch.cat([weight, padding], dim=0)
+            
+            self.codebook0_head = torch_to_mlx(weight)
             
         if hasattr(self.torch_model, 'audio_head'):
             self.audio_head = []
             for head in self.torch_model.audio_head:
-                self.audio_head.append(torch_to_mlx(head.weight))
+                # Ensure audio_head matches the expected audio_vocab_size
+                weight = head.weight
+                
+                # Check if weight shape doesn't match expected vocab size
+                if weight.shape[0] != self.args.audio_vocab_size:
+                    if self.debug:
+                        print(f"WARNING: audio_head weight shape {weight.shape[0]} doesn't match audio_vocab_size {self.args.audio_vocab_size}")
+                        print(f"Truncating or padding to match expected size")
+                    
+                    # Truncate or pad to match expected vocab size
+                    if weight.shape[0] > self.args.audio_vocab_size:
+                        # Truncate to expected size
+                        weight = weight[:self.args.audio_vocab_size, :]
+                    else:
+                        # Need to pad with zeros
+                        padding = torch.zeros((self.args.audio_vocab_size - weight.shape[0], weight.shape[1]), 
+                                              dtype=weight.dtype, device=weight.device)
+                        weight = torch.cat([weight, padding], dim=0)
+                
+                self.audio_head.append(torch_to_mlx(weight))
                 
         # Set up embedding helper
         self.embedding = MLXEmbedding(
