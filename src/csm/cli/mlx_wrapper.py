@@ -18,7 +18,7 @@ from csm.models.model import sample_topk
 from csm.cli.mlx_layers import (
     MLXTransformer, torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
 )
-from csm.cli.mlx_embedding import MLXEmbedding, mlx_sample_topk, mlx_sample_categorical
+from csm.cli.mlx_embedding import MLXEmbedding
 from csm.cli.mlx_sample_exact import mlx_sample_exact
 from csm.cli.mlx_generation import MLXFrameGenerator
 
@@ -52,9 +52,9 @@ class MLXWrapper:
                 args.audio_num_codebooks = 32
             args.debug = True  # Enable debug output
             
-        # Token generation strategy option 
-        self.use_pytorch_tokens = getattr(args, 'use_pytorch_tokens', False)
-        self.sampling_mode = 'pytorch' if self.use_pytorch_tokens else 'mlx'
+        # Always use exact MLX sampling
+        self.use_pytorch_tokens = False
+        self.sampling_mode = 'exact'
             
         self.args = args
         self.mlx_backbone = None

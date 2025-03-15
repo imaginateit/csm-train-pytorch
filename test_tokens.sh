@@ -1,34 +1,11 @@
 #!/bin/bash
-# Script to run token generation tests comparing PyTorch and MLX implementations
+# Test MLX token generation quality
 
-# Directory for analysis results
-OUTDIR="token_analysis"
-mkdir -p $OUTDIR
+# Create output directory
+mkdir -p token_analysis
 
-# Text to test with
-TEXT="Hello, this is a test of the Conversational Speech Model."
+# Run the token test script
+echo "Running MLX token test with exact sampling implementation..."
+python -m src.csm.cli.mlx_token_test --mode all --iterations 1000
 
-# Make sure we have required packages
-pip install matplotlib numpy
-
-# Run direct sampling comparison test
-echo "===== Running direct sampling comparison test ====="
-python -m src.csm.cli.test_token_generation --test-sampling --save-dir $OUTDIR
-
-# Run hybrid implementation test
-echo ""
-echo "===== Running hybrid implementation test ====="
-python -m src.csm.cli.test_token_generation --text "$TEXT" --save-dir $OUTDIR --debug
-
-# Run exact implementation test
-echo ""
-echo "===== Running exact implementation test ====="
-python -m src.csm.cli.test_token_generation --text "$TEXT" --save-dir $OUTDIR --use-exact --debug
-
-# List generated files
-echo ""
-echo "===== Generated analysis files ====="
-ls -la $OUTDIR
-
-echo ""
-echo "Analysis complete. Results saved to $OUTDIR/"
+echo "Test complete. Check the token_analysis directory for detailed results."

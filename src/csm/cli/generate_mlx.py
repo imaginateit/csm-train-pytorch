@@ -78,17 +78,14 @@ else:
 
     def load_csm_1b_mlx(
         ckpt_path: str,
-        use_pytorch_tokens: bool = False,
-        use_exact_sampling: bool = False,
         debug: bool = False
     ):
         """
-        Load the CSM-1B model from a checkpoint path for inference with MLX acceleration.
+        Load the CSM-1B model from a checkpoint path for inference with MLX acceleration
+        using exact PyTorch-matching sampling for high quality.
         
         Args:
             ckpt_path: Path to the checkpoint, either local path or "csm-1B" to download from HuggingFace
-            use_pytorch_tokens: Whether to use PyTorch for token generation (hybrid mode)
-            use_exact_sampling: Whether to use exact PyTorch-matching MLX sampling
             debug: Whether to enable debug output
             
         Returns:
@@ -224,13 +221,11 @@ else:
             except:
                 print("Warning: No tokenizer found - will use model's tokenize method")
         
-        # Create MLX-powered generator with options
+        # Create MLX-powered generator with exact PyTorch-matching sampling
         generator = MLXGenerator(
             model=torch_model,
             tokenizer=tokenizer,
-            debug=debug or os.environ.get("DEBUG", "0") == "1",
-            use_pytorch_tokens=use_pytorch_tokens,
-            use_exact_sampling=use_exact_sampling
+            debug=debug or os.environ.get("DEBUG", "0") == "1" 
         )
         
         return generator
@@ -328,20 +323,9 @@ else:
             default=50,
             help="Top-k sampling parameter (default: 50)",
         )
-        # Sampling mode group
-        sampling_group = parser.add_argument_group("Sampling options")
-        sampling_group.add_argument(
-            "--use-exact-sampling",
-            action="store_true",
-            help="Use the exact PyTorch-matching sampling implementation (higher quality)",
-        )
-        sampling_group.add_argument(
-            "--pytorch-tokens",
-            action="store_true",
-            help="Force PyTorch to generate tokens (hybrid mode, highest quality)",
-        )
-        sampling_group.add_argument(
-            "--seed",
+        # Sampling options
+        parser.add_argument(
+            "--seed", 
             type=int,
             default=None,
             help="Random seed for reproducible token generation",
@@ -420,23 +404,14 @@ else:
                     sys.exit(1)
         
         try:
-            # Load with MLX acceleration with appropriate options
+            # Load with MLX acceleration using exact PyTorch-matching sampling
             generator = load_csm_1b_mlx(
-                model_path, 
-                use_pytorch_tokens=args.pytorch_tokens,
-                use_exact_sampling=args.use_exact_sampling,
+                model_path,
                 debug=args.debug
             )
             
             print("Model loaded successfully with MLX acceleration")
-            
-            # Determine and print sampling mode
-            if args.pytorch_tokens:
-                print("Using PyTorch token generation (hybrid mode) for highest quality")
-            elif args.use_exact_sampling:
-                print("Using exact PyTorch-matching sampling implementation for higher quality")
-            else:
-                print("Using native MLX sampling implementation")
+            print("Using exact PyTorch-matching sampling for high quality audio")
                 
             using_mlx = True
         except Exception as e:

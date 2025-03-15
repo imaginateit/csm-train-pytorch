@@ -10,7 +10,8 @@ import numpy as np
 import torch
 
 from csm.cli.mlx_layers import MLXTransformer, torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
-from csm.cli.mlx_embedding import MLXEmbedding, mlx_sample_topk, mlx_sample_categorical
+from csm.cli.mlx_embedding import MLXEmbedding
+from csm.cli.mlx_sample_exact import mlx_sample_exact
 
 
 class MLXFrameGenerator:
@@ -569,7 +570,7 @@ class MLXFrameGenerator:
                 c0_logits = mx.matmul(last_hidden, self.codebook0_head_weight.T)
                 
                 # Sample from logits - shape could be [batch] or [batch, 1]
-                c0_sample_mlx = mlx_sample_categorical(c0_logits, temperature)
+                c0_sample_mlx = mlx_sample_exact(c0_logits, topk=400, temperature=temperature)
                 
                 # Fix shape issues with categorical sampling result
                 if len(c0_sample_mlx.shape) == 0:  # Scalar result
@@ -726,7 +727,7 @@ class MLXFrameGenerator:
                         ci_logits = mx.matmul(last_decoder_hidden, self.audio_head_weights[i - 1].T)
                         
                         # Sample from logits - shape could be [batch] or [batch, 1]
-                        ci_sample_mlx = mlx_sample_categorical(ci_logits, temperature)
+                        ci_sample_mlx = mlx_sample_exact(ci_logits, topk=400, temperature=temperature)
                         
                         # Fix shape issues with categorical sampling result
                         if len(ci_sample_mlx.shape) == 0:  # Scalar result
