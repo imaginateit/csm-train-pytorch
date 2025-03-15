@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 from csm.cli.mlx_wrapper import MLXWrapper
-from csm.cli.mlx_components.config import get_voice_preset
+from csm.cli.mlx_components.config import MLXConfig
 from csm.cli.mlx_components.utils import measure_time, is_mlx_available
 from csm.cli.mlx_layers import torch_to_mlx
 
@@ -47,7 +47,7 @@ class MLXGenerator:
         self.tokenizer = tokenizer
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.debug = debug
-        self.voice = None  # Initialize voice attribute
+        self.speaker = None  # Initialize speaker attribute
         self.text = None   # Initialize text attribute
         self.sample_rate = 24000  # Default sample rate
         self._last_audio = None  # Store last audio for direct access
@@ -104,7 +104,7 @@ class MLXGenerator:
     def generate_speech(
         self,
         text: str,
-        voice: Union[str, int] = 0,
+        speaker: int = 0,
         temperature: float = 1.0,
         topk: int = 50,
         seed: Optional[int] = None,
@@ -115,7 +115,7 @@ class MLXGenerator:
         
         Args:
             text: Text to generate speech for
-            voice: Voice preset name or speaker ID
+            speaker: Speaker ID (default: 0)
             temperature: Temperature for sampling
             topk: Top-k value for sampling
             seed: Random seed for reproducible generation
@@ -127,30 +127,8 @@ class MLXGenerator:
         # Store the text for later reference
         self.text = text
         
-        # Process voice parameter
-        self.voice = voice
-        
-        # Check voice type and get preset if needed
-        speaker_id = voice
-        if isinstance(voice, str) and not voice.isdigit():
-            # Get voice preset
-            preset = get_voice_preset(voice)
-            if self.debug:
-                print(f"Using voice preset: {voice}")
-                
-            # Override parameters if not explicitly set
-            preset_temp = preset.get('temperature')
-            preset_topk = preset.get('topk')
-            
-            if preset_temp is not None and temperature == 1.0:
-                temperature = preset_temp
-                if self.debug:
-                    print(f"Using preset temperature: {temperature}")
-                    
-            if preset_topk is not None and topk == 50:
-                topk = preset_topk
-                if self.debug:
-                    print(f"Using preset topk: {topk}")
+        # Store the speaker ID
+        self.speaker = speaker
         
         # Tokenize the input text
         text_tokens = self.tokenize(text)
@@ -359,12 +337,8 @@ class MLXGenerator:
                     
                 # Handle speaker parameter
                 if 'speaker' in param_names:
-                    # If we used a string voice name, try to convert to int
-                    if isinstance(self.voice, str) and self.voice.isdigit():
-                        generate_kwargs['speaker'] = int(self.voice)
-                    else:
-                        # Default to speaker 0
-                        generate_kwargs['speaker'] = 0
+                    # Use speaker ID directly
+                    generate_kwargs['speaker'] = self.speaker
                         
                 # Handle context parameter
                 if 'context' in param_names:
@@ -525,9 +499,9 @@ class MLXGenerator:
         if progress_callback is not None:
             kwargs["callback"] = progress_callback
             
-        # Handle voice parameter
-        if self.voice is not None:
-            kwargs["speaker"] = self.voice
+        # Handle speaker parameter
+        if self.speaker is not None:
+            kwargs["speaker"] = self.speaker
             
         with torch.no_grad():
             try:

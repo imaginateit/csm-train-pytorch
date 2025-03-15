@@ -19,7 +19,7 @@ from huggingface_hub import hf_hub_download
 from csm.cli.mlx_components.utils import (
     is_mlx_available, check_device_compatibility, setup_mlx_debug, measure_time
 )
-from csm.cli.mlx_components.config import get_voice_preset, VOICE_PRESETS
+from csm.cli.mlx_components.config import MLXConfig
 from csm.cli.mlx_components.generator import MLXGenerator
 
 # Create dummy modules for imports that might fail on Mac
@@ -266,20 +266,11 @@ else:
             required=True,
             help="Text to generate speech for",
         )
-        # Voice selection group
-        voice_group = parser.add_mutually_exclusive_group()
-        voice_group.add_argument(
+        parser.add_argument(
             "--speaker",
             type=int,
             default=0,
             help="Speaker ID (default: 0)",
-        )
-        voice_group.add_argument(
-            "--voice",
-            type=str,
-            choices=VOICE_PRESETS.keys(),
-            default="standard",
-            help=f"Voice preset to use (available: {', '.join(VOICE_PRESETS.keys())})",
         )
         parser.add_argument(
             "--output",
@@ -343,20 +334,8 @@ else:
             os.environ["DEBUG"] = "1"
             setup_mlx_debug(True)
         
-        # Determine speaker ID from either --speaker or --voice
+        # Use the speaker ID directly
         speaker_id = args.speaker
-        if args.voice:
-            speaker_preset = get_voice_preset(args.voice)
-            # Use voice as string for modern generator
-            speaker_id = args.voice
-            print(f"Using voice preset '{args.voice}'")
-            
-            # Override with preset values if not explicitly provided
-            if not parser.get_default("temperature") != args.temperature:
-                args.temperature = speaker_preset.get("temperature", args.temperature)
-            if not parser.get_default("topk") != args.topk:
-                args.topk = speaker_preset.get("topk", args.topk)
-        
         print(f"Using temperature={args.temperature}, topk={args.topk}")
         
         # Get the model path, downloading if necessary
@@ -562,7 +541,7 @@ else:
                 # Modern modular generator
                 generate_kwargs = {
                     "text": args.text,
-                    "voice": speaker_id,
+                    "speaker": speaker_id,
                     "temperature": args.temperature,
                     "topk": args.topk,
                     "progress_callback": progress_callback

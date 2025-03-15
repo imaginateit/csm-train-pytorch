@@ -25,11 +25,11 @@ pip install -e ".[apple]"
 ### Generate Your First Audio
 
 ```bash
-# Generate with a warm voice
-csm-generate --text "Hello, this is a test of the CSM speech model." --voice warm
+# Generate speech
+csm-generate --text "Hello, this is a test of the CSM speech model."
 
 # Using Apple Silicon acceleration
-csm-generate-mlx --text "Hello, this is a test of the CSM speech model." --voice warm
+csm-generate-mlx --text "Hello, this is a test of the CSM speech model."
 ```
 
 Your generated audio is saved as `audio.wav` in the current directory.
@@ -43,7 +43,7 @@ CSM provides two commands for generating speech:
 
 ```bash
 # Basic usage
-csm-generate --text "Hello, world!" --voice calm
+csm-generate --text "Hello, world!"
 
 # With longer duration (in milliseconds)
 csm-generate --text "This is a longer example" --max-audio-length-ms 20000
@@ -129,7 +129,7 @@ The MLX acceleration features an optimized pure-MLX implementation that delivers
 - **Vectorized Operations**: Carefully tuned matrix operations that leverage Apple Silicon's parallel processing capabilities
 - **Numeric Stability**: Meticulous implementation of sampling algorithms with proper temperature scaling and top-k filtering
 - **Intelligent Caching**: Strategic memory management and key-value caching to reduce redundant computations
-- **Voice Presets**: Pre-configured voice settings for different speech characteristics with temperature and sampling parameters tuned for MLX
+- **Parameter Optimization**: Carefully tuned temperature and sampling parameters for optimal audio quality with MLX
 
 ### 💻 Using MLX Acceleration
 
@@ -140,17 +140,17 @@ On a Mac with Apple Silicon:
 pip install -e ".[apple]"
 
 # Basic usage with MLX acceleration
-csm-generate-mlx --text "Accelerated with Apple Silicon" --voice warm
+csm-generate-mlx --text "Accelerated with Apple Silicon"
 
 # Enable performance optimization with environmental variables
-MLX_AUTOTUNE=1 MLX_NUM_THREADS=6 csm-generate-mlx --text "Fully optimized for Apple Silicon" --voice warm
+MLX_AUTOTUNE=1 MLX_NUM_THREADS=6 csm-generate-mlx --text "Fully optimized for Apple Silicon"
 
 # With performance debugging to see metrics
 csm-generate-mlx --text "Show me the performance metrics" --debug
 
-# Try different voice presets with tuned parameters
-csm-generate-mlx --text "This is the energetic voice preset" --voice energetic --temperature 1.1 --topk 80
-csm-generate-mlx --text "And this is the calm voice preset" --voice calm --temperature 0.8 --topk 40
+# Try different parameter combinations
+csm-generate-mlx --text "High temperature and top-k" --temperature 1.3 --topk 80
+csm-generate-mlx --text "Low temperature and top-k" --temperature 0.8 --topk 20
 ```
 
 ### ⚡ Performance
@@ -215,11 +215,11 @@ Each component was designed with both performance and accuracy in mind, enabling
 
 **Does this model come with pre-trained voices?**
 
-CSM includes 10 voice presets through the `--voice` parameter. These are base voices without specific personality or character traits, but they provide a good starting point.
+CSM includes support for 10 different speaker IDs (0-9) through the `--speaker` parameter. These are base voices without specific personality or character traits.
 
 **Can I fine-tune it on my own voice?**
 
-Fine-tuning capability is planned for future updates. Currently, CSM works best with the included voice presets.
+Fine-tuning capability is planned for future updates. Currently, CSM works best with the included speaker IDs.
 
 **Does it work on Windows/Linux?**
 
