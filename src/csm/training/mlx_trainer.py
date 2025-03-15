@@ -501,18 +501,29 @@ class CSMMLXTrainer:
             # Try direct model parameters first
             if hasattr(self.model, 'parameters') and callable(self.model.parameters):
                 params = self.model.parameters()
-                loss, grads = nn.value_and_grad(loss_fn)(params)
-                
-                # Apply gradient clipping if specified
-                if hasattr(self, 'max_grad_norm') and self.max_grad_norm > 0:
-                    grads = self._clip_gradients(grads, self.max_grad_norm)
-                
-                # Update model with optimizer
-                self.optimizer.update(self.model, grads)
-                
-                # Ensure computation completes (MLX is lazy)
-                mx.eval(loss)
-                return loss
+                try:
+                    # Handle different MLX versions - newer versions require different arguments
+                    try:
+                        # Newer MLX version syntax
+                        loss_value_and_grad = nn.value_and_grad(loss_fn, params)
+                        loss, grads = loss_value_and_grad()
+                    except TypeError:
+                        # Older MLX version syntax
+                        loss, grads = nn.value_and_grad(loss_fn)(params)
+                    
+                    # Apply gradient clipping if specified
+                    if hasattr(self, 'max_grad_norm') and self.max_grad_norm > 0:
+                        grads = self._clip_gradients(grads, self.max_grad_norm)
+                    
+                    # Update model with optimizer
+                    self.optimizer.update(self.model, grads)
+                    
+                    # Ensure computation completes (MLX is lazy)
+                    mx.eval(loss)
+                    return loss
+                except Exception as grad_e:
+                    self.logger.warning(f"Error in value_and_grad: {grad_e}")
+                    # Continue to other approaches
             
             # If model has a backbone with parameters, try that
             elif hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'parameters'):
@@ -534,18 +545,29 @@ class CSMMLXTrainer:
                     return loss
                 
                 params = self.model.backbone.parameters()
-                loss, grads = nn.value_and_grad(backbone_loss_fn)(params)
-                
-                # Apply gradient clipping if specified
-                if hasattr(self, 'max_grad_norm') and self.max_grad_norm > 0:
-                    grads = self._clip_gradients(grads, self.max_grad_norm)
-                
-                # Update backbone with optimizer
-                self.optimizer.update(self.model.backbone, grads)
-                
-                # Ensure computation completes (MLX is lazy)
-                mx.eval(loss)
-                return loss
+                try:
+                    # Handle different MLX versions
+                    try:
+                        # Newer MLX version syntax
+                        backbone_loss_value_and_grad = nn.value_and_grad(backbone_loss_fn, params)
+                        loss, grads = backbone_loss_value_and_grad()
+                    except TypeError:
+                        # Older MLX version syntax
+                        loss, grads = nn.value_and_grad(backbone_loss_fn)(params)
+                    
+                    # Apply gradient clipping if specified
+                    if hasattr(self, 'max_grad_norm') and self.max_grad_norm > 0:
+                        grads = self._clip_gradients(grads, self.max_grad_norm)
+                    
+                    # Update backbone with optimizer
+                    self.optimizer.update(self.model.backbone, grads)
+                    
+                    # Ensure computation completes (MLX is lazy)
+                    mx.eval(loss)
+                    return loss
+                except Exception as grad_e:
+                    self.logger.warning(f"Error in backbone value_and_grad: {grad_e}")
+                    # Continue to other approaches
             
             # If there's a module attribute, try that
             elif hasattr(self.model, 'module') and hasattr(self.model.module, 'parameters'):
@@ -567,18 +589,29 @@ class CSMMLXTrainer:
                     return loss
                 
                 params = self.model.module.parameters()
-                loss, grads = nn.value_and_grad(module_loss_fn)(params)
-                
-                # Apply gradient clipping if specified
-                if hasattr(self, 'max_grad_norm') and self.max_grad_norm > 0:
-                    grads = self._clip_gradients(grads, self.max_grad_norm)
-                
-                # Update module with optimizer
-                self.optimizer.update(self.model.module, grads)
-                
-                # Ensure computation completes (MLX is lazy)
-                mx.eval(loss)
-                return loss
+                try:
+                    # Handle different MLX versions
+                    try:
+                        # Newer MLX version syntax
+                        module_loss_value_and_grad = nn.value_and_grad(module_loss_fn, params)
+                        loss, grads = module_loss_value_and_grad()
+                    except TypeError:
+                        # Older MLX version syntax
+                        loss, grads = nn.value_and_grad(module_loss_fn)(params)
+                    
+                    # Apply gradient clipping if specified
+                    if hasattr(self, 'max_grad_norm') and self.max_grad_norm > 0:
+                        grads = self._clip_gradients(grads, self.max_grad_norm)
+                    
+                    # Update module with optimizer
+                    self.optimizer.update(self.model.module, grads)
+                    
+                    # Ensure computation completes (MLX is lazy)
+                    mx.eval(loss)
+                    return loss
+                except Exception as grad_e:
+                    self.logger.warning(f"Error in module value_and_grad: {grad_e}")
+                    # Continue to other approaches
                 
             else:
                 # No parameters method found, just compute loss without gradients

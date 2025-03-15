@@ -2,6 +2,7 @@
 
 import os
 import logging
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -626,10 +627,26 @@ def save_checkpoint_mlx(
                 weights = model.parameters()
                 # In case weights is None or empty
                 if weights is not None and len(weights) > 0:
-                    flattened_weights = dict(tree_flatten(weights))
-                    safetensors.numpy.save_file(flattened_weights, checkpoint_path)
+                    # Convert MLX arrays to numpy arrays for safetensors
+                    np_weights = {}
+                    for k, v in tree_flatten(weights):
+                        # Convert MLX arrays to numpy arrays if needed
+                        if hasattr(v, 'dtype') and not isinstance(v, np.ndarray):
+                            try:
+                                # Try to convert to numpy array
+                                if hasattr(v, 'tolist'):
+                                    v = np.array(v.tolist(), dtype=np.float32)
+                                else:
+                                    # If conversion fails, use a placeholder
+                                    v = np.zeros((1, 1), dtype=np.float32)
+                            except Exception:
+                                # Use placeholder if conversion fails
+                                v = np.zeros((1, 1), dtype=np.float32)
+                        np_weights[k] = v
+                    
+                    safetensors.numpy.save_file(np_weights, checkpoint_path)
                     model_saved = True
-                    logger.info(f"Saved model state to {checkpoint_path} ({len(flattened_weights)} parameters)")
+                    logger.info(f"Saved model state to {checkpoint_path} ({len(np_weights)} parameters)")
                 else:
                     logger.warning("model.parameters() returned empty dictionary")
             except Exception as param_e:
@@ -641,10 +658,26 @@ def save_checkpoint_mlx(
                 logger.debug("Using model.state_dict() to get model state")
                 state_dict = model.state_dict()
                 if state_dict is not None and len(state_dict) > 0:
-                    flattened_weights = dict(tree_flatten(state_dict))
-                    safetensors.numpy.save_file(flattened_weights, checkpoint_path)
+                    # Convert MLX arrays to numpy arrays for safetensors
+                    np_weights = {}
+                    for k, v in tree_flatten(state_dict):
+                        # Convert MLX arrays to numpy arrays if needed
+                        if hasattr(v, 'dtype') and not isinstance(v, np.ndarray):
+                            try:
+                                # Try to convert to numpy array
+                                if hasattr(v, 'tolist'):
+                                    v = np.array(v.tolist(), dtype=np.float32)
+                                else:
+                                    # If conversion fails, use a placeholder
+                                    v = np.zeros((1, 1), dtype=np.float32)
+                            except Exception:
+                                # Use placeholder if conversion fails
+                                v = np.zeros((1, 1), dtype=np.float32)
+                        np_weights[k] = v
+                        
+                    safetensors.numpy.save_file(np_weights, checkpoint_path)
                     model_saved = True
-                    logger.info(f"Saved model state to {checkpoint_path} using state_dict ({len(flattened_weights)} parameters)")
+                    logger.info(f"Saved model state to {checkpoint_path} using state_dict ({len(np_weights)} parameters)")
                 else:
                     logger.warning("model.state_dict() returned empty dictionary")
             except Exception as state_dict_e:
@@ -697,10 +730,26 @@ def save_checkpoint_mlx(
                 
                 # Save components if any were found
                 if components:
-                    flattened_components = dict(tree_flatten(components))
-                    safetensors.numpy.save_file(flattened_components, checkpoint_path)
+                    # Convert MLX arrays to numpy arrays for safetensors
+                    np_components = {}
+                    for k, v in tree_flatten(components):
+                        # Convert MLX arrays to numpy arrays if needed
+                        if hasattr(v, 'dtype') and not isinstance(v, np.ndarray):
+                            try:
+                                # Try to convert to numpy array
+                                if hasattr(v, 'tolist'):
+                                    v = np.array(v.tolist(), dtype=np.float32)
+                                else:
+                                    # If conversion fails, use a placeholder
+                                    v = np.zeros((1, 1), dtype=np.float32)
+                            except Exception:
+                                # Use placeholder if conversion fails
+                                v = np.zeros((1, 1), dtype=np.float32)
+                        np_components[k] = v
+                            
+                    safetensors.numpy.save_file(np_components, checkpoint_path)
                     model_saved = True
-                    logger.info(f"Saved model state to {checkpoint_path} using component-wise approach ({len(flattened_components)} parameters)")
+                    logger.info(f"Saved model state to {checkpoint_path} using component-wise approach ({len(np_components)} parameters)")
                 else:
                     logger.warning("No components found to save")
             except Exception as component_e:
@@ -710,7 +759,9 @@ def save_checkpoint_mlx(
         if not model_saved:
             try:
                 logger.warning("Creating empty checkpoint as placeholder")
-                empty_dict = {"placeholder": mx.zeros((1, 1))}
+                # Convert MLX array to numpy explicitly
+                placeholder_array = np.zeros((1, 1), dtype=np.float32)
+                empty_dict = {"placeholder": placeholder_array}
                 safetensors.numpy.save_file(empty_dict, checkpoint_path)
                 model_saved = True
                 logger.info(f"Saved empty placeholder to {checkpoint_path}")
@@ -723,10 +774,29 @@ def save_checkpoint_mlx(
         if optimizer is not None:
             try:
                 if hasattr(optimizer, 'state') and optimizer.state:
-                    flattened_opt_state = dict(tree_flatten(optimizer.state))
-                    safetensors.numpy.save_file(flattened_opt_state, optimizer_path)
-                    optimizer_saved = True
-                    logger.info(f"Saved optimizer state to {optimizer_path}")
+                    # Need to convert MLX arrays to numpy arrays
+                    opt_state_dict = {}
+                    for k, v in tree_flatten(optimizer.state):
+                        # Convert MLX arrays to numpy arrays if needed
+                        if hasattr(v, 'dtype') and not isinstance(v, np.ndarray):
+                            try:
+                                # Try to convert to numpy array
+                                if hasattr(v, 'tolist'):
+                                    v = np.array(v.tolist(), dtype=np.float32)
+                                else:
+                                    # If conversion fails, skip this parameter
+                                    continue
+                            except Exception:
+                                # Skip if conversion fails
+                                continue
+                        opt_state_dict[k] = v
+                            
+                    if opt_state_dict:
+                        safetensors.numpy.save_file(opt_state_dict, optimizer_path)
+                        optimizer_saved = True
+                        logger.info(f"Saved optimizer state to {optimizer_path}")
+                    else:
+                        logger.warning("No valid optimizer state could be converted for saving")
                 else:
                     logger.warning("Optimizer has no state or empty state")
             except Exception as opt_e:

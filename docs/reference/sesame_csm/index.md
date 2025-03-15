@@ -36,12 +36,18 @@ This documentation has been split into multiple pages for better readability and
    - Key libraries and dependencies
    - Integration guidelines
 
-7. **[Comparison with Moshi](comparison.md)**
+7. **[MLX Integration Testing](mlx_integration_testing.md)**
+   - Integration test suite overview
+   - Benchmark methodology
+   - Performance comparison with PyTorch
+   - Troubleshooting common issues
+
+8. **[Comparison with Moshi](comparison.md)**
    - Feature comparison
    - Architectural differences
    - Performance benchmarks
 
-8. **[Implementation Considerations](considerations.md)**
+9. **[Implementation Considerations](considerations.md)**
    - Best practices
    - Common challenges
    - Recommended approaches
