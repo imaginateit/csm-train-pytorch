@@ -20,6 +20,9 @@ pip install -e .
 
 # For Apple Silicon users (recommended for Mac)
 pip install -e ".[apple]"
+
+# For fine-tuning capabilities
+pip install -e ".[finetune,lora]"
 ```
 
 ### Generate Your First Audio
@@ -36,10 +39,23 @@ Your generated audio is saved as `audio.wav` in the current directory.
 
 ## 🖥️ Command-Line Interface
 
-CSM provides two commands for generating speech:
+CSM provides several commands for speech generation and model fine-tuning:
 
+### Speech Generation
 - `csm-generate`: Standard version (works on all platforms)
 - `csm-generate-mlx`: MLX-accelerated version for Apple Silicon Macs
+
+### Model Training
+- `csm-train`: Standard training (works on all platforms)
+- `csm-train-mlx`: MLX-accelerated training for Apple Silicon Macs
+
+### Fine-tuning with LoRA
+- `csm-finetune-lora`: Fine-tune with LoRA on Apple Silicon
+- `csm-finetune-lora-multi`: Multi-speaker fine-tuning with LoRA
+
+### Benchmarking and Optimization
+- `csm-benchmark-lora`: Benchmark LoRA configurations
+- `csm-benchmark-mlx`: Benchmark MLX acceleration
 
 ```bash
 # Basic usage
@@ -81,6 +97,45 @@ audio = generator.generate(
 # Save the audio
 torchaudio.save("output.wav", audio.unsqueeze(0).cpu(), generator.sample_rate)
 ```
+
+### Fine-tuning with LoRA
+
+The LoRA implementation allows parameter-efficient fine-tuning on Apple Silicon:
+
+```python
+from csm.training.lora_trainer import CSMLoRATrainer
+
+# Initialize LoRA trainer
+trainer = CSMLoRATrainer(
+    model_path="path/to/model.safetensors",
+    output_dir="./fine_tuned_model",
+    lora_r=8,               # LoRA rank
+    lora_alpha=16.0,        # LoRA scaling factor
+    target_modules=["q_proj", "v_proj"]  # Which modules to fine-tune
+)
+
+# Prepare optimizer
+trainer.prepare_optimizer()
+
+# Train the model
+trainer.train(
+    train_dataset=train_dataset,
+    val_dataset=val_dataset,
+    batch_size=2,
+    epochs=5
+)
+
+# Save the fine-tuned model (LoRA weights only)
+trainer.save_model("fine_tuned_model.safetensors", save_mode="lora")
+
+# Generate speech with the fine-tuned model
+audio = trainer.generate_sample(
+    text="This is speech from the fine-tuned model.",
+    speaker_id=0
+)
+```
+
+For more details on fine-tuning, see the [examples directory](./examples/) and [LoRA documentation](./docs/reference/sesame_csm/lora_finetuning.md).
 
 ### Contextual Generation
 

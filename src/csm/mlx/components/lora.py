@@ -294,7 +294,7 @@ class LoRATransformerLayer:
                     name=name
                 )
     
-    def forward(self, hidden_states, attention_mask=None, position_ids=None, past_key_value=None, output_attentions=False):
+    def __call__(self, hidden_states, attention_mask=None, position_ids=None, past_key_value=None, output_attentions=False):
         """
         Forward pass through the LoRA-adapted transformer layer.
         
@@ -345,6 +345,9 @@ class LoRATransformerLayer:
         hidden_states = residual + feedforward_output
         
         return hidden_states
+        
+    # Keep forward method for backward compatibility
+    forward = __call__
     
     def _lora_attention(self, hidden_states, attention_mask=None, position_ids=None, past_key_value=None):
         """Apply multi-head attention with LoRA adapters."""
@@ -570,7 +573,7 @@ class LoRATransformer:
             else:
                 self.lora_layers.append((layer_idx, base_layer))
     
-    def forward(self, hidden_states, attention_mask=None, position_ids=None, input_pos=None, mask=None):
+    def __call__(self, hidden_states, attention_mask=None, position_ids=None, input_pos=None, mask=None):
         """
         Forward pass through the LoRA-adapted transformer model.
         
@@ -593,11 +596,20 @@ class LoRATransformer:
             
         # Process through each transformer layer
         for layer_idx, layer in self.lora_layers:
-            hidden_states = layer.forward(
-                hidden_states,
-                attention_mask=attention_mask,
-                position_ids=position_ids
-            )
+            if hasattr(layer, '__call__'):
+                hidden_states = layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids
+                )
+            elif hasattr(layer, 'forward'):
+                hidden_states = layer.forward(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids
+                )
+            else:
+                raise ValueError(f"Layer {layer_idx} has neither __call__ nor forward method")
             
         # Apply final layer norm if available in base model
         if self.base_model.final_layernorm_weight is not None:

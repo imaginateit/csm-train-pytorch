@@ -1,0 +1,49 @@
+[
+  {
+    "name": "speaker1",
+    "speaker_id": 1,
+    "audio_dir": "./data/speaker1/audio",
+    "transcript_dir": "./data/speaker1/transcripts",
+    "alignment_dir": "./data/speaker1/alignments",
+    "lora_r": 8,
+    "lora_alpha": 16.0,
+    "learning_rate": 1e-4,
+    "epochs": 5,
+    "sample_prompt": "This is a test of the first speaker's voice model."
+  },
+  {
+    "name": "speaker2",
+    "speaker_id": 2,
+    "audio_dir": "./data/speaker2/audio",
+    "transcript_dir": "./data/speaker2/transcripts",
+    "lora_r": 16,
+    "lora_alpha": 32.0,
+    "learning_rate": 5e-5,
+    "epochs": 10,
+    "sample_prompt": "This is a test of the second speaker's voice model."
+  },
+  {
+    "name": "speaker3_expressive",
+    "speaker_id": 3,
+    "audio_dir": "./data/speaker3/audio",
+    "transcript_dir": "./data/speaker3/transcripts",
+    "alignment_dir": "./data/speaker3/alignments",
+    "target_modules": ["q_proj", "v_proj", "o_proj"],
+    "lora_r": 32,
+    "lora_alpha": 64.0,
+    "learning_rate": 8e-5,
+    "sample_prompt": "This is a test of the third speaker's more expressive voice model."
+  },
+  {
+    "name": "speaker4_minimal",
+    "speaker_id": 4,
+    "audio_dir": "./data/speaker4/audio",
+    "transcript_dir": "./data/speaker4/transcripts",
+    "lora_r": 4,
+    "lora_alpha": 8.0,
+    "learning_rate": 2e-4,
+    "epochs": 3,
+    "target_modules": ["q_proj"],
+    "sample_prompt": "This is a test of the fourth speaker's minimal voice model."
+  }
+]

@@ -46,12 +46,31 @@ train = [
     "safetensors>=0.4.0",
 ]
 
+finetune = [
+    "safetensors>=0.4.0",
+    "datasets>=2.12.0",
+    "huggingface_hub>=0.14.1",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.1",
+    "torchaudio>=2.0.0",
+]
+
+lora = [
+    "mlx>=0.3.0",
+    "safetensors>=0.4.0",
+    "numpy>=1.24.0",
+]
+
 [project.scripts]
 csm-generate = "csm.cli.generate:main"
 csm-generate-mlx = "csm.cli.generate_mlx:main"
 csm-verify = "csm.cli.verify:main"
 csm-train = "csm.cli.train:main"
 csm-train-mlx = "csm.cli.train_mlx:main"
+csm-finetune-lora = "csm.cli.finetune_lora:main"
+csm-finetune-lora-multi = "csm.cli.finetune_lora_multi:main"
+csm-benchmark-lora = "csm.training.run_lora_benchmark:main"
+csm-benchmark-mlx = "csm.training.run_mlx_benchmark:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
