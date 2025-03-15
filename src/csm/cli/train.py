@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from csm.generator import Segment
-from csm.training.data import (
+from csm.data import (
     CSMDataset,
     CSMDataProcessor,
     ContextualExampleGenerator,
