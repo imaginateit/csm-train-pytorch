@@ -11,6 +11,7 @@ import random
 from typing import Optional, Tuple, List
 
 import mlx.core as mx
+import mlx.random
 import numpy as np
 import torch
 

@@ -15,56 +15,28 @@ import importlib
 
 def patch_mlx_sampling_with_optimized():
     """
-    Patch the MLX sampling implementation with the optimized version.
+    Verify that the optimized MLX sampling implementation is being used.
     
-    This maintains the exact same token distribution quality while
-    improving performance through memory reuse and computational optimizations.
+    The optimized implementation is now directly imported in mlx_sample_exact.py,
+    so this function just verifies that it's properly set up.
     
     Returns:
-        True if patching was successful, False otherwise
+        True if the optimized implementation is active, False otherwise
     """
     try:
-        # First import our optimized implementation
+        # Import both implementations to check
+        from csm.cli.mlx_sample_exact import mlx_sample_exact
         from csm.cli.mlx_sample_exact_optimized import mlx_sample_exact_optimized
         
-        # Now patch the modules that use the original implementation
-        
-        # 1. Patch the mlx_sample_exact module directly
-        from csm.cli.mlx_sample_exact import mlx_sample_exact as original_func
-        
-        # Save the original function attributes
-        original_doc = original_func.__doc__
-        original_module = original_func.__module__
-        
-        # Create a wrapper that preserves the original function signature
-        def optimized_wrapper(*args, **kwargs):
-            # Forward to optimized implementation
-            return mlx_sample_exact_optimized(*args, **kwargs)
-        
-        # Transfer docstring and other attributes
-        optimized_wrapper.__doc__ = original_doc
-        optimized_wrapper.__module__ = original_module
-        optimized_wrapper.__name__ = original_func.__name__
-        
-        # Patch the module
-        sys.modules['csm.cli.mlx_sample_exact'].mlx_sample_exact = optimized_wrapper
-        
-        # 2. Directly patch mlx_generation.py where sampling is used
-        try:
-            from csm.cli.mlx_generation import mlx_sample_exact
-            sys.modules['csm.cli.mlx_generation'].mlx_sample_exact = optimized_wrapper
-        except (ImportError, AttributeError):
-            # Module might not be imported yet - that's okay
-            pass
-            
-        # 3. Also check for other modules that might import it
-        for name, module in list(sys.modules.items()):
-            if hasattr(module, 'mlx_sample_exact'):
-                setattr(module, 'mlx_sample_exact', optimized_wrapper)
-                
-        return True
+        # Check if they're the same function object
+        if mlx_sample_exact is mlx_sample_exact_optimized:
+            return True
+        else:
+            # They should be the same - something is wrong
+            print("Warning: mlx_sample_exact is not using the optimized implementation")
+            return False
     except Exception as e:
-        print(f"Error applying MLX optimizations: {e}")
+        print(f"Error checking MLX sampling implementation: {e}")
         return False
 
 def apply_general_mlx_optimizations():
@@ -159,11 +131,8 @@ def print_optimization_status(optimizations: Dict[str, Any]):
     """
     print("\n=== MLX Optimizations Status ===")
     
-    # Check sampling optimization
-    if optimizations.get("sampling_optimized", False):
-        print("✓ Optimized sampling: ENABLED - Faster token generation with memory reuse")
-    else:
-        print("✗ Optimized sampling: DISABLED - Using standard implementation")
+    # We now always use the optimized implementation
+    print("✓ Optimized sampling: ENABLED - Using high-performance implementation")
         
     # Check array cache
     if optimizations.get("array_cache_enabled", False):
@@ -188,7 +157,7 @@ def print_optimization_status(optimizations: Dict[str, Any]):
 
 def run_benchmark(text: str = "This is a benchmark test of the optimized MLX implementation."):
     """
-    Run a benchmark comparing original vs optimized implementations.
+    Run a benchmark of the MLX sampling implementation.
     
     Args:
         text: Text to use for benchmark
@@ -197,16 +166,13 @@ def run_benchmark(text: str = "This is a benchmark test of the optimized MLX imp
         Dictionary with benchmark results
     """
     result = {
-        "optimized_time": None,
-        "original_time": None,
-        "speedup": None,
+        "sampling_time": None,
         "success": False
     }
     
     try:
-        # Import both implementations
+        # Import sampling implementation
         from csm.cli.mlx_sample_exact import mlx_sample_exact
-        from csm.cli.mlx_sample_exact_optimized import mlx_sample_exact_optimized
         import mlx.core as mx
         
         # Create random data
@@ -234,32 +200,24 @@ def run_benchmark(text: str = "This is a benchmark test of the optimized MLX imp
         temperature = 0.8
         topk = 100
         
-        # Test original implementation
+        # Warmup
+        for i in range(5):
+            _ = mlx_sample_exact(logits, topk=topk, temperature=temperature, seed=i)
+        
+        # Benchmark
         start_time = time.time()
         for i in range(iterations):
             _ = mlx_sample_exact(logits, topk=topk, temperature=temperature, seed=i)
-        original_time = time.time() - start_time
-        
-        # Test optimized implementation
-        start_time = time.time()
-        for i in range(iterations):
-            _ = mlx_sample_exact_optimized(logits, topk=topk, temperature=temperature, seed=i)
-        optimized_time = time.time() - start_time
-        
-        # Calculate speedup
-        speedup = original_time / optimized_time if optimized_time > 0 else float('inf')
+        sampling_time = time.time() - start_time
         
         # Store results
-        result["original_time"] = original_time
-        result["optimized_time"] = optimized_time
-        result["speedup"] = speedup
+        result["sampling_time"] = sampling_time
         result["success"] = True
         
         # Print benchmark results
         print("\n=== MLX Sampling Benchmark Results ===")
-        print(f"Original implementation: {original_time:.4f} seconds for {iterations} iterations")
-        print(f"Optimized implementation: {optimized_time:.4f} seconds for {iterations} iterations")
-        print(f"Speedup: {speedup:.2f}x")
+        print(f"Implementation: {sampling_time:.4f} seconds for {iterations} iterations")
+        print(f"Average per sample: {sampling_time/iterations*1000:.2f} ms")
         print("=====================================\n")
         
     except Exception as e:

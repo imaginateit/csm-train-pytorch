@@ -20,6 +20,7 @@ from csm.cli.mlx_layers import torch_to_mlx
 # Import MLX if available
 try:
     import mlx.core as mx
+    import mlx.random
     MLX_AVAILABLE = True
 except ImportError:
     MLX_AVAILABLE = False

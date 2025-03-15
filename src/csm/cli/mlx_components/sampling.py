@@ -11,6 +11,7 @@ import torch
 # Import MLX if available
 try:
     import mlx.core as mx
+    import mlx.random
     MLX_AVAILABLE = True
 except ImportError:
     MLX_AVAILABLE = False
