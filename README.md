@@ -100,7 +100,41 @@ torchaudio.save("output.wav", audio.unsqueeze(0).cpu(), generator.sample_rate)
 
 ### Fine-tuning with LoRA
 
-The LoRA implementation allows parameter-efficient fine-tuning on Apple Silicon:
+CSM supports parameter-efficient fine-tuning using LoRA on Apple Silicon:
+
+#### Command-line Fine-tuning with Hugging Face Datasets
+
+The simplest way to fine-tune on voice datasets from Hugging Face:
+
+```bash
+# Download from Hugging Face, fine-tune, and generate samples
+python examples/huggingface_lora_finetune.py \
+  --model-path path/to/model.safetensors \
+  --output-dir ./hf_finetuned_model \
+  --dataset mozilla-foundation/common_voice_16_0 \
+  --language en \
+  --num-samples 100 \
+  --lora-r 8 \
+  --batch-size 2 \
+  --epochs 5
+```
+
+#### Verify Hugging Face Workflow
+
+To verify the Hugging Face workflow works correctly:
+
+```bash
+# Test the workflow with a specific model
+python examples/test_lora_finetune.py \
+  --model-path path/to/model.safetensors \
+  --num-samples 20 \
+  --output-dir ./test_output
+
+# Comprehensive testing of all LoRA functionality
+python -m csm.training.test_lora_comprehensive
+```
+
+#### Python API for Custom Fine-tuning
 
 ```python
 from csm.training.lora_trainer import CSMLoRATrainer

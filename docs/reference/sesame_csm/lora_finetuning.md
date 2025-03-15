@@ -1,68 +1,22 @@
-# LoRA Fine-tuning with MLX
+# LoRA Fine-Tuning with CSM
 
-This guide explains how to fine-tune CSM (Conversational Speech Model) models using LoRA (Low-Rank Adaptation) with MLX on Apple Silicon.
+This document covers the Low-Rank Adaptation (LoRA) fine-tuning capabilities in the CSM framework, including integration with Hugging Face datasets and testing infrastructure for validation.
 
-## What is LoRA?
+## Overview
 
-LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning technique that significantly reduces the number of trainable parameters by adding small, trainable "adapter" modules to existing weights in a model while keeping the original weights frozen.
+LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning method that significantly reduces the number of trainable parameters while maintaining performance. CSM implements LoRA for speech model fine-tuning with both local data and Hugging Face datasets.
 
-Benefits of LoRA:
-- Reduces memory requirements (only updating a small fraction of parameters)
-- Faster training and inference
-- Multiple fine-tuned versions can be stored compactly
-- Can be merged with original weights for deployment
-- State-of-the-art performance for voice adaptation
-
-## Requirements
-
-- Apple Silicon Mac (M1/M2/M3 series)
-- Python 3.11+
-- MLX installed (`pip install mlx`)
-- A pre-trained CSM model (safetensors or PyTorch format)
-- Audio data for fine-tuning
-
-## Installation
-
-Ensure you have the CSM package installed with development dependencies:
-
-```bash
-# Create and activate virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
-
-# Install the package in development mode
-pip install -e ".[dev]"
-```
-
-## Preparing Your Data
-
-LoRA fine-tuning requires:
-1. Audio files (WAV format)
-2. Transcript files (matching filenames with .txt extension)
-3. Optional alignment files (matching filenames with .json extension)
-
-Directory structure example:
-```
-data/
-├── audio/
-│   ├── sample1.wav
-│   ├── sample2.wav
-│   └── ...
-├── transcripts/
-│   ├── sample1.txt
-│   ├── sample2.txt
-│   └── ...
-└── alignments/  (optional)
-    ├── sample1.json
-    ├── sample2.json
-    └── ...
-```
-
-Each transcript file should contain the text corresponding to the audio file. Alignment files provide word-level timing information, which can improve the quality of fine-tuning but are optional.
+Key features:
+- Parameter-efficient fine-tuning with customizable rank and target modules
+- MLX acceleration optimized for Apple Silicon
+- Multiple save modes (lora, full, and both)
+- Integrated support for Hugging Face datasets
+- Robust testing infrastructure 
+- Multi-level audio generation fallbacks
 
 ## Basic Usage
 
-The simplest way to fine-tune a CSM model with LoRA is using the provided CLI:
+Fine-tuning a CSM model with LoRA from the command line:
 
 ```bash
 python -m csm.cli.finetune_lora \
@@ -70,262 +24,15 @@ python -m csm.cli.finetune_lora \
   --output-dir ./fine_tuned_model \
   --audio-dir /path/to/audio \
   --transcript-dir /path/to/transcripts \
-  --speaker-id 0 \
+  --lora-r 8 \
+  --lora-alpha 16.0 \
   --batch-size 2 \
   --epochs 5
 ```
 
-This will fine-tune the model using default LoRA parameters (rank=8, alpha=16) and save the resulting model in the specified output directory.
+## Hugging Face Integration
 
-## Advanced Configuration
-
-### LoRA Parameters
-
-Customize the LoRA adapter configuration:
-
-```bash
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./fine_tuned_model \
-  --audio-dir /path/to/audio \
-  --transcript-dir /path/to/transcripts \
-  --lora-r 16 \
-  --lora-alpha 32 \
-  --lora-dropout 0.05 \
-  --target-modules q_proj v_proj o_proj \
-  --target-layers 0 1 2 3
-```
-
-Parameters explained:
-- `lora-r`: LoRA rank (higher means more capacity but more parameters)
-- `lora-alpha`: LoRA scaling factor (typically 2×r)
-- `lora-dropout`: Dropout probability for LoRA layers
-- `target-modules`: Which modules to apply LoRA to (options: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj)
-- `target-layers`: Layer indices to apply LoRA to (default: all layers)
-- `lora-bias`: Add trainable bias terms to LoRA layers
-
-### Training Parameters
-
-Fine-tune the training process:
-
-```bash
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./fine_tuned_model \
-  --audio-dir /path/to/audio \
-  --transcript-dir /path/to/transcripts \
-  --learning-rate 5e-5 \
-  --semantic-weight 120.0 \
-  --acoustic-weight 1.0 \
-  --weight-decay 0.01 \
-  --batch-size 4 \
-  --epochs 10 \
-  --val-split 0.1 \
-  --val-every 50 \
-  --save-every 200 \
-  --max-grad-norm 1.0
-```
-
-Parameters explained:
-- `learning-rate`: Learning rate for Adam optimizer
-- `semantic-weight`: Weight for semantic token loss (codebook 0)
-- `acoustic-weight`: Weight for acoustic token loss (other codebooks)
-- `weight-decay`: Weight decay for optimizer
-- `batch-size`: Batch size for training
-- `epochs`: Number of epochs to train
-- `val-split`: Validation split ratio
-- `val-every`: Validate every N steps
-- `save-every`: Save checkpoint every N steps
-- `max-grad-norm`: Maximum gradient norm for clipping
-
-### Data Processing
-
-Configure data processing options:
-
-```bash
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./fine_tuned_model \
-  --audio-dir /path/to/audio \
-  --transcript-dir /path/to/transcripts \
-  --alignment-dir /path/to/alignments \
-  --speaker-id 1 \
-  --max-seq-len 1024 \
-  --context-turns 3
-```
-
-Parameters explained:
-- `alignment-dir`: Directory containing alignment files (optional)
-- `speaker-id`: Speaker ID to use for training (default: 0)
-- `max-seq-len`: Maximum sequence length (default: 2048)
-- `context-turns`: Number of context turns to include (default: 2)
-
-### Output Options
-
-Configure saving options:
-
-```bash
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./fine_tuned_model \
-  --audio-dir /path/to/audio \
-  --transcript-dir /path/to/transcripts \
-  --save-mode both \
-  --generate-samples \
-  --sample-prompt "This is a test of my new voice model." \
-  --log-level debug
-```
-
-Parameters explained:
-- `save-mode`: How to save the fine-tuned model (options: lora, full, both)
-  - `lora`: Save only LoRA parameters (default, smallest files)
-  - `full`: Save the full model with merged weights
-  - `both`: Save both LoRA parameters and merged model
-- `generate-samples`: Generate audio samples after training
-- `sample-prompt`: Prompt for sample generation
-- `log-level`: Logging level (options: debug, info, warning, error, critical)
-- `debug`: Enable debug mode with more verbose logging
-
-## Resuming Training
-
-To resume training from a checkpoint:
-
-```bash
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./fine_tuned_model \
-  --audio-dir /path/to/audio \
-  --transcript-dir /path/to/transcripts \
-  --resume-from ./fine_tuned_model/checkpoint_latest.safetensors
-```
-
-## Using LoRA Models in Python
-
-You can load and use LoRA fine-tuned models programmatically:
-
-```python
-import mlx.core as mx
-from csm.mlx.components.model_wrapper import MLXModelWrapper
-from csm.mlx.components.lora import apply_lora_to_model
-from csm.training.lora_trainer import CSMLoRATrainer
-
-# Load base model
-model_args = {
-    "backbone_flavor": "llama-1B",
-    "decoder_flavor": "llama-100M",
-    "text_vocab_size": 128256,
-    "audio_vocab_size": 2051,
-    "audio_num_codebooks": 32
-}
-model = MLXModelWrapper(model_args)
-
-# Create trainer and load LoRA weights
-trainer = CSMLoRATrainer(
-    model_path="/path/to/base_model.safetensors",
-    output_dir="./output",
-    lora_r=8,
-    lora_alpha=16.0
-)
-
-# Load LoRA weights
-trainer.load_lora_weights("/path/to/lora_weights.safetensors")
-
-# Generate audio with the fine-tuned model
-trainer.generate_sample(
-    text="This is a test of the fine-tuned voice model.",
-    speaker_id=0,
-    output_path="./sample.wav"
-)
-```
-
-## Advanced Use Cases
-
-### Multiple Speaker Adaptation
-
-To fine-tune for multiple speakers, organize your data by speaker and run separate fine-tuning jobs:
-
-```bash
-# Fine-tune for speaker 1
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./speaker1_model \
-  --audio-dir /path/to/speaker1/audio \
-  --transcript-dir /path/to/speaker1/transcripts \
-  --speaker-id 1
-
-# Fine-tune for speaker 2
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./speaker2_model \
-  --audio-dir /path/to/speaker2/audio \
-  --transcript-dir /path/to/speaker2/transcripts \
-  --speaker-id 2
-```
-
-### Style Transfer
-
-For style transfer, prepare data that exemplifies the target style:
-
-```bash
-python -m csm.cli.finetune_lora \
-  --model-path /path/to/model.safetensors \
-  --output-dir ./emotional_style \
-  --audio-dir /path/to/emotional/audio \
-  --transcript-dir /path/to/emotional/transcripts \
-  --speaker-id 0 \
-  --lora-r 32 \  # Higher rank for better style capture
-  --lora-alpha 64 \
-  --target-modules q_proj v_proj o_proj  # Include more modules for style
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Out of Memory Errors**
-   - Reduce batch size
-   - Reduce LoRA rank (--lora-r)
-   - Target fewer layers (--target-layers)
-   - Target fewer modules (--target-modules)
-
-2. **Poor Audio Quality**
-   - Increase LoRA rank
-   - Include more target modules
-   - Increase training epochs
-   - Ensure audio quality is good in training data
-
-3. **Loss Not Decreasing**
-   - Adjust learning rate
-   - Check data quality
-   - Increase semantic and acoustic weights
-   - Ensure alignment between audio and transcripts
-
-4. **Import Errors**
-   - Ensure MLX is installed and up to date
-   - Check you're running on Apple Silicon
-   - Verify all dependencies are installed
-
-### Performance Tips
-
-1. Use a higher batch size if memory allows (--batch-size 4 or higher)
-2. Target only the most important modules (q_proj and v_proj work well)
-3. For memory constraints, target only upper layers (--target-layers 16 17 18 19)
-4. Balance lora-r and lora-alpha (typically alpha = 2×r)
-
-## Future Improvements
-
-Future versions of the LoRA implementation may include:
-- QLoRA support for even more memory-efficient fine-tuning
-- Multi-speaker training in a single run
-- Automatic hyperparameter optimization
-- Integration with external tools for better alignment
-- Prompt-conditioned LoRA for style control
-
-## Hugging Face Dataset Integration
-
-CSM provides integration with the Hugging Face datasets library for easier fine-tuning with publicly available speech datasets. This allows you to fine-tune CSM models without having to prepare your own audio and transcript files.
-
-### Basic Usage
+CSM provides seamless integration with Hugging Face datasets:
 
 ```bash
 python examples/huggingface_lora_finetune.py \
@@ -335,40 +42,122 @@ python examples/huggingface_lora_finetune.py \
   --language en \
   --num-samples 100 \
   --lora-r 8 \
-  --lora-alpha 16.0 \
   --batch-size 2 \
   --epochs 5
 ```
 
-### Using Local Datasets
+For detailed usage, see `examples/huggingface_lora_finetuning.md`.
 
-You can also use the Hugging Face integration with local datasets:
+## Recommended Datasets
 
-```bash
-python examples/huggingface_lora_finetune.py \
-  --model-path /path/to/model.safetensors \
-  --dataset local \
-  --audio-dir /path/to/audio \
-  --transcript-dir /path/to/transcripts \
-  --output-dir ./local_finetuned_model \
-  --lora-r 8 \
-  --lora-alpha 16.0 \
-  --batch-size 2 \
-  --epochs 5
-```
-
-### Recommended Hugging Face Datasets
-
-These datasets work well for fine-tuning speech models:
+These Hugging Face datasets work well for fine-tuning CSM models:
 
 - `mozilla-foundation/common_voice_16_0`: Multi-language crowd-sourced voice dataset
 - `openslr/librispeech_asr`: English audiobook recordings
 - `facebook/voxpopuli`: Multi-language European Parliament recordings
 - `jonatasgrosman/ljspeech_format`: Converted audiobooks in LJSpeech format
 
-## References
+## Implementation Details
 
-- [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
-- [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
-- [MLX Documentation](https://ml-explore.github.io/mlx/build/html/index.html)
-- [CSM Documentation](https://github.com/conversationalspeechmodel/csm)
+### LoRA Architecture
+
+The CSM implementation of LoRA follows the original paper with these key components:
+
+1. **LoRALinear**: Base adaptation unit for linear layers that manages low-rank decomposition (matrices A and B) with proper scaling by alpha/r.
+
+2. **LoRATransformerLayer**: Wrapper for transformer layers that selectively applies LoRA to specific projection matrices (query, key, value, etc.).
+
+3. **apply_lora_to_model**: High-level function to apply LoRA to a CSM model, adding helper methods for parameter management and weight merging.
+
+Default configuration:
+- Target modules: query and value projection matrices (`q_proj` and `v_proj`)
+- Rank (r): 8
+- Alpha scaling factor: 16.0
+- No dropout (0.0)
+
+### Saving Options
+
+The trainer supports three save modes:
+
+1. **lora**: Save only LoRA parameters (smallest files, requires original model at inference time)
+2. **full**: Save the full model with merged weights (largest files, standalone use)
+3. **both**: Save both LoRA parameters and merged model (most flexible, largest storage)
+
+## Testing Infrastructure
+
+CSM includes a comprehensive test script for validating all aspects of LoRA fine-tuning, including the Hugging Face integration:
+
+```bash
+# Run all tests
+python -m csm.training.test_lora_comprehensive
+
+# Run only Hugging Face integration tests
+python -m csm.training.test_lora_comprehensive --test huggingface
+
+# Run real dataset tests (requires network access)
+python -m csm.training.test_lora_comprehensive --test huggingface-real
+```
+
+The test script validates:
+
+1. Basic LoRA initialization with different configurations
+2. CLI fine-tuning functionality
+3. Hugging Face integration with local and remote datasets
+4. Audio generation fallback mechanisms
+5. Different save modes (lora, full, both)
+6. Performance benchmarks for different LoRA configurations
+
+### Validating the Hugging Face Workflow
+
+To specifically verify the primary use case of downloading voice samples from Hugging Face, training on that data, and running inference, use:
+
+```bash
+python -m csm.training.test_lora_comprehensive --test huggingface-real
+```
+
+This test:
+1. Downloads a small subset of speech samples from Hugging Face datasets
+2. Processes the data for fine-tuning
+3. Performs minimal LoRA fine-tuning on the data
+4. Generates a sample audio with the fine-tuned model
+5. Validates that all steps completed successfully
+
+The test tries multiple datasets to ensure robustness against dataset API changes or network issues.
+
+## Performance Optimization
+
+For best performance on Apple Silicon:
+
+- **M1**: Use rank 4-8, batch size 1-2
+- **M2**: Use rank 8-16, batch size 2-4
+- **M3**: Use rank 16-32, batch size 4-8
+
+Generally:
+- Smaller ranks (4-8) are more efficient for small datasets
+- Target modules `q_proj` and `v_proj` offer the best efficiency/performance balance
+- Using more target modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`) increases expressivity at the cost of more parameters
+- For a rough performance estimate, run the benchmark test:
+
+```bash
+python -m csm.training.test_lora_comprehensive --test benchmark
+```
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Out of memory errors**: Reduce batch size or LoRA rank
+2. **Slow training**: Try reducing the number of target modules or use a smaller rank
+3. **Poor adaptation quality**: Try increasing rank, targeting more modules, or increasing epochs
+4. **Downloading failures**: Check network connection, try a different dataset or use local data
+5. **Audio generation issues**: The system will try multiple fallback methods; check logs for details
+
+For detailed validation, run the comprehensive test with specific components:
+
+```bash
+# Test audio generation fallbacks
+python -m csm.training.test_lora_comprehensive --test fallbacks
+
+# Test save modes
+python -m csm.training.test_lora_comprehensive --test save
+```
