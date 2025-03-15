@@ -1,0 +1,23 @@
+{
+    "speakers": [
+        {
+            "id": 0,
+            "name": "Speaker1",
+            "audio_dir": "/path/to/speaker1/audio",
+            "transcript_dir": "/path/to/speaker1/transcripts",
+            "alignment_dir": "/path/to/speaker1/alignments"
+        },
+        {
+            "id": 1,
+            "name": "Speaker2",
+            "audio_dir": "/path/to/speaker2/audio",
+            "transcript_dir": "/path/to/speaker2/transcripts"
+        },
+        {
+            "id": 2,
+            "name": "Speaker3",
+            "audio_dir": "/path/to/speaker3/audio",
+            "transcript_dir": "/path/to/speaker3/transcripts"
+        }
+    ]
+}

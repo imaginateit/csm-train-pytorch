@@ -88,6 +88,52 @@ python low_resource_finetune.py \
 
 Low-resource adaptation uses a smaller LoRA rank, higher regularization via weight decay and dropout, and optional data augmentation to maximize the effectiveness of limited training data.
 
+### 4. Multi-Speaker Fine-tuning
+
+The `multi_speaker_finetune.py` script demonstrates how to fine-tune multiple speakers in a single training run, sharing common components for efficiency while maintaining speaker-specific adaptation layers.
+
+**Usage:**
+
+```bash
+python multi_speaker_finetune.py \
+  --model-path /path/to/model.safetensors \
+  --speakers-config speakers_config_example.json \
+  --output-dir ./multi_speaker_finetuned \
+  --share-backbone \
+  --lora-r 8 \
+  --lora-alpha 16.0 \
+  --target-modules q_proj v_proj \
+  --epochs 10 \
+  --batch-size 2 \
+  --learning-rate 5e-5 \
+  --generate-samples \
+  --merge-models \
+  --shared-weight 0.5
+```
+
+Multi-speaker fine-tuning requires a configuration file (`speakers_config_example.json`) that defines the speakers, their IDs, and paths to their audio and transcript files:
+
+```json
+{
+    "speakers": [
+        {
+            "id": 0,
+            "name": "Speaker1",
+            "audio_dir": "/path/to/speaker1/audio",
+            "transcript_dir": "/path/to/speaker1/transcripts"
+        },
+        {
+            "id": 1,
+            "name": "Speaker2",
+            "audio_dir": "/path/to/speaker2/audio",
+            "transcript_dir": "/path/to/speaker2/transcripts"
+        }
+    ]
+}
+```
+
+This approach enables efficient multi-speaker training by sharing the backbone transformer but keeping speaker-specific layers, significantly reducing training time and memory requirements compared to training each speaker individually.
+
 ## Tips for Effective Fine-tuning
 
 ### General Tips
