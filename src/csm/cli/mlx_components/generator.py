@@ -79,13 +79,14 @@ class MLXGenerator:
                 # Set debug flag
                 args.debug = debug
                 
-                # Always use exact sampling (ensure it's patched at startup)
+                # Always use exact sampling with the optimized implementation
                 args.use_exact_sampling = True
                 args.use_pytorch_tokens = False
                 
-                # Patch exact sampling by default
-                from csm.cli.use_exact_sampling import patch_mlx_sampling
-                patch_mlx_sampling(enable=True, verbose=debug)
+                # We're now using the optimized exact implementation by default
+                # Since our cleanup, this is the only implementation available
+                if debug:
+                    print("Using optimized MLX sampling implementation")
                 
                 # Create MLX wrapper
                 self.mlx_wrapper = MLXWrapper(model, args)
