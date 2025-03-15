@@ -1,56 +1,151 @@
 # Training Procedures
 
-Moshi’s training pipeline was conducted in **multiple phases**, each with different data and objectives ([](https://kyutai.org/Moshi.pdf#:~:text=of%20our%207B,custom%20dataset%20built%20from%20synthetic)). The model starts from Helium’s pretrained weights for the Temporal Transformer, then is gradually taught to handle audio tokens and multi-speaker dialogue, and finally fine-tuned for conversational instruction-following. In parallel, the Mimi codec is trained separately on audio data before being fixed for Moshi. We detail the datasets used, how they were preprocessed, the distinct training stages, and the loss/optimization strategies at each stage.
+Moshi's training pipeline was conducted in **multiple phases**, each with different data and objectives. The model starts from Helium's pretrained weights for the Temporal Transformer, then is gradually taught to handle audio tokens and multi-speaker dialogue, and finally fine-tuned for conversational instruction-following. In parallel, the Mimi codec is trained separately on audio data before being fixed for Moshi.
 
-##  Datasets and Preprocessing
+## Datasets and Preprocessing
 
-- **Text Pretraining Data:** As mentioned, Helium was trained on 2.1 trillion tokens of English text. High-quality sources included Wikipedia, StackExchange Q&A, and scientific publications, supplemented heavily by web crawl data (CommonCrawl) that was filtered for quality ([](https://kyutai.org/Moshi.pdf#:~:text=obtain%20a%20large%20and%20high,quality)). The filtering pipeline first removed duplicative content (using hash fingerprints of lines and dedup at shard and line level) and non-English text ([](https://kyutai.org/Moshi.pdf#:~:text=obtain%20a%20large%20and%20high,quality%20training%20set)). Then a classifier (fastText-based) scored each line for content quality and topic, to keep only those above a certain threshold ([](https://kyutai.org/Moshi.pdf#:~:text=as%20Wikipedia%2C%20Stack%20Exchange%20and,In%20the)). They likely aimed for a broad but balanced corpus, avoiding too much of any single domain or low-quality web text. The resulting text dataset was extremely large (trillions of tokens) and required distributed training over many GPUs for several weeks. Helium’s final training was unsupervised (next-token prediction) with a cross-entropy loss on the text tokens.
+### Text Pretraining Data
 
-- **Unsupervised Audio Pretraining Data:** For teaching Moshi to model speech audio, Kyutai assembled an **enormous audio dataset (~7 million hours)** of “readily available audio content” ([](https://kyutai.org/Moshi.pdf#:~:text=4,majority%20of%20which%20contains%20English)). This is orders of magnitude larger than typical speech corpora – it likely includes a variety of sources such as audio books, podcasts, web videos, conversational speech datasets, etc. The majority is English (which matches Helium’s language), but possibly some multilingual content was included given the scale. They call it “unsupervised” because these audio clips are not annotated with transcriptions or speaker labels for the most part. To use this data, they rely on the **Mimi codec** to turn the raw audio into sequences of tokens. In early training phases, Moshi is exposed to this audio data in a _single-stream_ fashion (only one speaker’s audio at a time) to learn audio generation and understanding. It’s worth noting that 7M hours is an extremely large dataset – likely collected from many open-source audio repositories. Preprocessing steps for audio would include resampling everything to 24 kHz (the codec’s rate), normalizing volumes, and possibly segmenting long recordings into shorter chunks (they mention using random 12-second windows during training ([](https://kyutai.org/Moshi.pdf#:~:text=,codebook%20size%20of%20NA)) ([](https://kyutai.org/Moshi.pdf#:~:text=weights%20with%20a%20decay%20of,While%20the%20latent%20dimension%20is))). Since no transcripts are used initially, the model’s task is essentially to model the distribution of Mimi audio token sequences (similar to how AudioLM and SoundStream Language Models are trained to predict compressed audio tokens).
+Helium was trained on 2.1 trillion tokens of English text. High-quality sources included:
+- Wikipedia
+- StackExchange Q&A
+- Scientific publications
+- Filtered CommonCrawl web data
 
-- **Simulated Multi-Stream Data (Diarization-based):** After initial audio training, Moshi undergoes a **post-training phase with “simulated multi-stream” audio based on diarization** ([](https://kyutai.org/Moshi.pdf#:~:text=The%20training%20of%20Moshi%20goes,keep%20training%20half%20of%20the)). This means they created pseudo-conversations from raw audio by taking single-speaker recordings and mixing or pairing them to form two-channel inputs. Likely, they applied a speaker diarization algorithm on some multi-speaker recordings or meetings to get separate speaker segments, and then treated those as parallel streams for training Moshi. Alternatively, they could randomly pair segments from the unsupervised audio data, designating one as “user” and another as “system,” possibly overlapping them to simulate interruptions. The goal in this phase is to introduce Moshi to **two-stream audio** scenarios _without_ relying on transcripts. The model learns to handle two concurrent token streams and the temporal relationships between them (e.g. one stream pausing while the other speaks). Since no textual supervision is yet present, Moshi at this stage is essentially learning to predict future audio tokens on both streams given past audio tokens on both streams – a complex acoustic modeling task. Diarization ensures that in training examples the two streams indeed correspond to different speakers. This phase used a subset of data or fewer steps (the paper notes ~100k steps with 8h audio batches) ([](https://kyutai.org/Moshi.pdf#:~:text=Batch%20size%20%28text%29%204,now%20describe%20our%20method%20to)).
+The filtering pipeline:
+1. Removed duplicative content (using hash fingerprints and deduplication)
+2. Filtered non-English text
+3. Applied quality scoring using a fastText-based classifier
+4. Prioritized content from high-quality domains (STEM, humanities)
 
-- **Supervised Conversation Data (Fisher Dataset):** To teach Moshi actual conversational dynamics with real transcript grounding, they fine-tuned on the **Fisher English corpus** ([](https://kyutai.org/Moshi.pdf#:~:text=Temporal%20Transformer%20initialized%20from%20Helium,2004%29%20to%20gain%20its)) ([](https://kyutai.org/Moshi.pdf#:~:text=the%20same%20time,paired%20participants%2C%20with%20a%20given)). Fisher is ~2,000 hours of telephone conversations (2 speakers on separate channels) with transcriptions – a classic dataset for speech diarization and ASR ([](https://kyutai.org/Moshi.pdf#:~:text=the%20same%20time,paired%20participants%2C%20with%20a%20given)). Because Fisher has each side recorded separately, it provides **ground-truth two-channel audio** (one channel per speaker) aligned with text. Kyutai leveraged this in two ways. First, they used the audio to further fine-tune Moshi’s ability to handle _real_ overlapping dialogue (which might have different characteristics than the simulated mixes). They mention using 10k training steps on Fisher to “gain fully duplex capabilities” ([](https://kyutai.org/Moshi.pdf#:~:text=Temporal%20Transformer%20initialized%20from%20Helium,for%20Helium%2C%20using%20a%20separate)) ([](https://kyutai.org/Moshi.pdf#:~:text=the%20Fisher%20dataset%20,We%20train%20for%2010k)) – essentially teaching Moshi to cope with realistic timing of turn-taking, interruptions, and silence in human dialogue. They likely input the Fisher conversations into Moshi by mapping one speaker’s audio tokens to Moshi’s stream and the other speaker to user stream ([](https://kyutai.org/Moshi.pdf#:~:text=For%20both%20Fisher%20and%20this,For)). The transcripts could be used to insert **Inner Monologue text tokens** for Moshi’s side (the “main speaker”) during training ([](https://kyutai.org/Moshi.pdf#:~:text=For%20both%20Fisher%20and%20this,For)) ([](https://kyutai.org/Moshi.pdf#:~:text=Fisher%2C%20the%20text%20stream%20only,along%20with%20the%20medium%20Whisper)). They did align the transcripts with audio using Whisper (medium model) to get accurate word timing ([](https://kyutai.org/Moshi.pdf#:~:text=match%20at%20L1322%20Fisher%2C%20the,along%20with%20the%20medium%20Whisper)), ensuring the text tokens could be placed at correct timestamps. Second, they actually did **not train Moshi directly on Fisher text** for the user side (the user’s words were not fed as text, only as audio) ([](https://kyutai.org/Moshi.pdf#:~:text=Note%20that%20we%20do%20not,of%20the%20user%2C%20as%20transcribing)). The text stream was only used for Moshi’s own utterances (main speaker) in that fine-tuning. This mimics Moshi’s deployment setting: it doesn’t get transcripts of user speech, only of its own. The Fisher fine-tune primarily improved Moshi’s **listening and barge-in behavior** – after this, the model learned to not freak out with overlapping inputs and to appropriately yield or continue speaking just as humans do.
+The resulting text dataset required distributed training over many GPUs for several weeks, using unsupervised next-token prediction with cross-entropy loss.
 
-- **Synthetic Conversation Data (Instruction Fine-tuning):** The final training stage was an **instructional fine-tune** on a large **synthetic dialogue dataset** created by Kyutai ([](https://kyutai.org/Moshi.pdf#:~:text=based%20on%20diarization%3B%20Fine,using%20a%20separate%20optimizer%20state)). Because high-quality, large-scale conversational data with audio is hard to obtain, they generated their own. They did so by leveraging Helium and Moshi’s TTS capabilities in a clever loop: (1) They fine-tuned Helium (as a text model) on existing dialogue datasets like OpenAI’s OpenChat or the OpenHermes dataset of multi-turn assistant conversations ([](https://kyutai.org/Moshi.pdf#:~:text=bullet%20points%2C%20long%20enumerations%29,then%20synthesize%20them%20with%20our)). (2) Using this, they _generated thousands of new dialogue scripts_ – i.e., wrote conversations between a user and an AI (Moshi persona) in text form ([](https://kyutai.org/Moshi.pdf#:~:text=bullet%20points%2C%20long%20enumerations%29,then%20synthesize%20them%20with%20our)). They likely prompted Helium to produce interactive Q&A, role-play dialogues, factual conversations, etc., to cover a wide range of scenarios. (3) They then used a **multi-stream TTS** system to convert these text dialogues into audio with two distinct voices (one for user, one for Moshi) on separate channels. The multi-stream TTS could have been an application of the Moshi model itself: since Moshi can generate both sides, one could condition it to output both user and system speech for a given script with appropriate timing. However, since Moshi wasn’t fully trained yet, they might also have used a conventional TTS for each role, ensuring the audio overlapped according to the script’s timing (like inserting interruptions and “backchannel” acknowledgments). They varied the “user” voice’s accent and noise conditions to enrich acoustic diversity, while keeping Moshi’s voice consistent (so that the model doesn’t learn to change its own voice). By doing this, they created on the order of **20,000 hours of synthetic conversational audio** paired with transcripts – a massive amount, far more than any real dataset. This dataset included many **instruction-following scenarios** (since Helium’s script generation would incorporate Q&A, user commands, etc.), which allowed Moshi to learn **assistant behaviors and obey prompts**. In training, both streams’ audio tokens are fed to Moshi, and Moshi’s stream also gets the inner monologue text tokens (the transcripts for Moshi’s own speech) as part of the target sequence. They refer to this as a custom dataset built from “synthetic interaction scripts” ([](https://kyutai.org/Moshi.pdf#:~:text=based%20on%20diarization%3B%20Fine,using%20a%20separate%20optimizer%20state)), used for instruction fine-tuning. The fine-tuning on this data (roughly 30k steps with 2.7h of audio per batch) taught Moshi to act like a helpful conversational agent, to follow user instructions/questions, and to maintain character and consistency over a dialogue. It essentially imbued the model with the **dialogue management and factual knowledge** that pure audio pretraining might not cover. Additionally, they also generated some **safety conversation scripts** (user asks something inappropriate and Moshi responds with a refusal) to fine-tune alignment/safety behavior ([](https://kyutai.org/Moshi.pdf#:~:text=simple%20factual%20tasks%20like%20adding,refuses%20to%20answer%20these%20requests)).
+### Unsupervised Audio Pretraining Data
 
-**Summary of Training Phases:** According to the paper, Moshi’s training had four phases ([](https://kyutai.org/Moshi.pdf#:~:text=of%20our%207B,custom%20dataset%20built%20from%20synthetic)):
+For teaching Moshi to model speech audio, Kyutai assembled an **enormous audio dataset (~7 million hours)** of "readily available audio content." This dataset is orders of magnitude larger than typical speech corpora and likely includes:
+- Audiobooks
+- Podcasts
+- Web videos
+- Conversational speech datasets
 
-1. **Pre-training (Audio-LM phase):** Using _unlabeled audio_ (7M hours) – Temporal Transformer initialized from Helium’s weights, Depth Transformer from scratch ([](https://kyutai.org/Moshi.pdf#:~:text=of%20our%207B,custom%20dataset%20built%20from%20synthetic)). Loss: predict next audio tokens (for one stream) as a language model. _Half of the training time, they still did text-only batches_ using the original text data, to ensure Helium’s language skills were not lost ([](https://kyutai.org/Moshi.pdf#:~:text=fully%20duplex%20capabilities%3B%20Instruction%20fine,training%20fisher%20fine)). (They maintained a separate optimizer state for these text-only updates ([](https://kyutai.org/Moshi.pdf#:~:text=fully%20duplex%20capabilities%3B%20Instruction%20fine,training%20fisher%20fine)).) This lasted ~1M steps, large batch (16 hours audio per batch) ([](https://kyutai.org/Moshi.pdf#:~:text=Batch%20size%20%28text%29%204,train%20LLMs%3A%20we%20now%20describe)). Additionally, an **acoustic delay** of 2 frames was used here ([](https://kyutai.org/Moshi.pdf#:~:text=Training%20steps%20500k%201M%20100k,6%200%200%200)), meaning the model sees semantic token and only 2 frames later the acoustic tokens – this stagger may help it predict semantic content slightly ahead of acoustics (a precursor to inner monologue usage).
+The majority is English content (matching Helium's language training). They call it "unsupervised" because these audio clips are not annotated with transcriptions or speaker labels for the most part.
 
-2. **Post-training (Dual audio streams, unsupervised):** Using _simulated two-speaker audio_ (from diarization/mixing). The model (Temporal+Depth) learns to handle two parallel audio token streams. This was ~100k steps (8h audio batch) ([](https://kyutai.org/Moshi.pdf#:~:text=Batch%20size%20%28text%29%204,now%20describe%20our%20method%20to)). By now Depth Transformer is definitely involved (predicting the multiple codebooks). They reduced acoustic delay to 1 (meaning semantic vs acoustic token offset of 1 frame) and set text delay to 0 (no text, since still unsupervised audio) ([](https://kyutai.org/Moshi.pdf#:~:text=Training%20steps%20500k%201M%20100k,6%200%200%200)). They also mention using _text-only batches 10% of the time_ during this phase ([](https://kyutai.org/Moshi.pdf#:~:text=a%20cosine%20learning%20rate%20starting,from%20the%20audio%20dataset%2C%20we)) to keep language modeling sharp.
+Audio preprocessing steps included:
+- Resampling to 24 kHz (the codec's rate)
+- Normalizing volume levels
+- Segmenting long recordings into shorter chunks (using random 12-second windows during training)
 
-3. **Supervised Fine-tuning (Conversational audio):** Using _real dialogue audio with transcripts_ (Fisher). This was a much shorter training (10k steps, 40 min audio per batch) ([](https://kyutai.org/Moshi.pdf#:~:text=Batch%20size%20%28text%29%204,now%20describe%20our%20method%20to)). The model was now fully capable of multi-stream generation. Here they introduced **Inner Monologue text tokens aligned with Moshi’s speech**, using the Fisher transcripts for Moshi’s side (with Whisper alignment) ([](https://kyutai.org/Moshi.pdf#:~:text=Fisher%2C%20the%20text%20stream%20only,along%20with%20the%20medium%20Whisper)). Text delay was 0 (transcripts aligned properly) and acoustic delay 1 in this phase ([](https://kyutai.org/Moshi.pdf#:~:text=Training%20steps%20500k%201M%20100k,6%200%200%200)). The goal was to teach the model to utilize the text prefix when available and learn from a smaller but higher-quality dialogue dataset.
+During this phase, Moshi is exposed to audio data in a _single-stream_ fashion (only one speaker's audio at a time) to learn audio generation and understanding.
 
-4. **Instruction Fine-tuning:** Using _synthetic multi-turn conversations_ (20k hours, generated as above). This final phase (~30k steps, 2.7h batch) integrates **instruction following, knowledge Q&A, and safety behavior** into Moshi ([](https://kyutai.org/Moshi.pdf#:~:text=based%20on%20diarization%3B%20Fine,using%20a%20separate%20optimizer%20state)). Essentially this is analogous to the “RLHF/safety fine-tune” stage for ChatGPT, except done with a huge synthetic supervised dataset. Moshi learns to follow user prompts, respond helpfully, and avoid unsafe content. At this stage, the model’s text-handling on Moshi’s side is fully in place (inner monologue of what it says), and possibly they might delay _user_ text if they wanted to output transcripts as ASR – but since Moshi primarily remains speech-to-speech, they likely did not include user transcripts in training (the user side is only audio tokens). The result of this stage is a model that not only _can_ carry a full-duplex conversation, but knows _how_ to act as a conversational agent with good manners and compliance to instructions.
+### Simulated Multi-Stream Data
 
-##  Loss Functions and Optimization
+After initial audio training, Moshi undergoes a **post-training phase with "simulated multi-stream" audio based on diarization**. This means they created pseudo-conversations from raw audio by:
+- Taking single-speaker recordings and mixing or pairing them to form two-channel inputs
+- Applying speaker diarization algorithms on multi-speaker recordings to get separate speaker segments
+- Treating these as parallel streams for training
 
-**Moshi Model Loss:** During all these phases, Moshi (Temporal+Depth) is trained as a **causal language model over a composite vocabulary** (text tokens + audio codec tokens). The primary loss is the cross-entropy of predicting the next token in each stream. At each time step, the model predicts the next token(s) in the sequence of combined streams. For example, if the sequence (flattened by time) goes: [User_audio_token(s)_t=1, Moshi_text_token_t=1, Moshi_audio_token(s)_t=1, User_audio_token(s)_t=2, ...], the model is trained to predict each token given all previous. They likely apply a masking such that Moshi cannot “see” future user tokens (to prevent peeking ahead in a conversation) – training data is sequentialized in time order. A subtlety is that Moshi’s output includes both text and audio tokens, which have very different densities and importance. The **Inner Monologue text tokens** are relatively sparse but extremely informative. The paper notes they gave higher loss weight to semantic tokens: e.g. a weight α=100 for semantic tokens vs 1 for acoustic tokens in the loss ([](https://kyutai.org/Moshi.pdf#:~:text=%CE%B1k%20is%20set%20to%20100,21)). This huge up-weighting forces the model to get the linguistic content right (the semantic token and text) even at the expense of some acoustic fidelity. This makes sense: a small error in an acoustic token might cause slight voice distortion, whereas an error in a semantic token could change a word’s identity and ruin intelligibility ([](https://kyutai.org/Moshi.pdf#:~:text=counterpart%2C%20semantic%20tokens%20do%20not,with%20language%20allows%20generating%20intelligible)). So Moshi’s loss function is a weighted sum of token prediction losses, with semantic/text tokens prioritized. Additionally, an **acoustic token delay τ** was used (τ=1 in final model) ([](https://kyutai.org/Moshi.pdf#:~:text=codebooks%20correspond%20to%20acoustic%20features,and%20acoustic%20tokens%20led%20to)): the semantic token for a time frame is predicted slightly ahead of the acoustic tokens for that same frame, which helped the model plan phonemes first then acoustics ([](https://kyutai.org/Moshi.pdf#:~:text=codebooks%20correspond%20to%20acoustic%20features,and%20acoustic%20tokens%20led%20to)). This effectively implements the inner monologue approach (predict semantic content just before the detailed acoustic tokens).
+The goal in this phase is to introduce Moshi to **two-stream audio** scenarios _without_ relying on transcripts. The model learns to handle two concurrent token streams and the temporal relationships between them (e.g., one stream pausing while the other speaks).
 
-**Mimi Loss:** Mimi’s training combined three types of loss: (1) **Reconstruction loss** – comparing the reconstructed waveform to the original, via multi-scale mel-spectrogram L1 loss, etc. (2) **Adversarial loss** – discriminator(s) output for real vs reconstructed audio (with a feature matching loss) ([](https://kyutai.org/Moshi.pdf#:~:text=Adversarial,scale%20STFT)). (3) **Distillation loss** – cosine similarity between Mimi’s first-layer quantized embedding and WavLM’s embedding for the same audio segment ([](https://kyutai.org/Moshi.pdf#:~:text=inspiration%20from%20previous%20work%20on,encoding%20and%20decoding%20of%20semantic)). In practice, they experimented with dropping (1) and relying only on (2)+(3) after a certain point, as mentioned above, to maximize perceptual quality ([](https://kyutai.org/Moshi.pdf#:~:text=Adversarial,We%20note%20that%20this)) ([](https://kyutai.org/Moshi.pdf#:~:text=Tagliasacchi%20et%20al,a%20remarkable%20boost%20in%20audio)). Mimi used AdamW optimizer with a learning rate ~8e-4 and fairly long training (up to 4M steps on 128 clips batch) ([](https://kyutai.org/Moshi.pdf#:~:text=optimizer,250%20frames%20before%20the%20last)) ([](https://kyutai.org/Moshi.pdf#:~:text=,codebook%20size%20of%20NA)). They also used an exponential moving average on model weights (decay 0.99) to stabilize training ([](https://kyutai.org/Moshi.pdf#:~:text=,and%20symmetrically%20for%20the%20decoder)). By end of training, Mimi achieved very high-quality compression – evaluators noted it outperforms previous codecs like SpeechTokenizer, RVQ-VAE (SoundStream) and SemantiCodec in quality ([Moshi open-source release: run Moshi locally!](https://kyutai.org/2024/09/18/moshi-release.html#:~:text=Mimi%20is%20a%20neural%20audio,tokens%20for%20a%20streaming%20Transformer)). An ABX phoneme discrimination test confirmed Mimi’s semantic tokens carry as much linguistic content as dedicated semantic encoders ([](https://kyutai.org/Moshi.pdf#:~:text=Mimi,based%20ABX%20%28Schatz%20et%20al)).
+This phase used approximately 100k training steps with 8-hour audio batches.
 
-**Optimization Strategies:** Throughout training, various strategies ensured efficiency and retention of skills:
+### Supervised Conversation Data (Fisher Dataset)
 
-- **Balanced Multi-Task Training:** During Moshi’s unsupervised pre-training, they maintained text-only language modeling alongside speech modeling (using separate optimizer states) ([](https://kyutai.org/Moshi.pdf#:~:text=fully%20duplex%20capabilities%3B%20Instruction%20fine,training%20fisher%20fine)). This prevented “catastrophic forgetting” of Helium’s knowledge when the model started modeling audio. Even in later audio-heavy phases, they still periodically fed pure text batches (10% in one phase) to preserve and intermix textual knowledge ([](https://kyutai.org/Moshi.pdf#:~:text=a%20cosine%20learning%20rate%20starting,from%20the%20audio%20dataset%2C%20we)). This multi-task approach was critical given the model has a dual role (text and audio generation).
+To teach Moshi actual conversational dynamics with real transcript grounding, they fine-tuned on the **Fisher English corpus** - approximately 2,000 hours of telephone conversations with transcriptions. Fisher provides:
+- Ground-truth two-channel audio (one channel per speaker) aligned with text
+- Real examples of overlapping dialogue, turn-taking, and natural conversational flow
 
-- **Two-Optimizer Setup:** They essentially treated the text-LM task and audio-LM task with different learning rates and states at first. The table of hyperparams shows Helium’s Transformer had a smaller learning rate (e.g. 3e-5) when training on audio, whereas the Depth Transformer and new tasks could use higher LR (2e-4) ([](https://kyutai.org/Moshi.pdf#:~:text=a%20cosine%20learning%20rate%20starting,from%20the%20audio%20dataset%2C%20we)) ([](https://kyutai.org/Moshi.pdf#:~:text=Moshi%20pre,2%2C%20using%20a)). This is to gently fine-tune the large LLM weights (so it doesn’t drift too far) while quickly learning new audio modeling with the Depth module.
+Kyutai used this dataset to:
+1. Fine-tune Moshi's ability to handle real conversational dynamics (10k training steps)
+2. Teach the model to cope with realistic timing, interruptions, and silence in human dialogue
+3. Introduce **Inner Monologue text tokens** for Moshi's side using aligned transcripts
 
-- **Curriculum Learning:** The training progressed from easier single-speaker audio modeling to full two-speaker interactions and then to complex instruction following. This curriculum – unsupervised to supervised, single to multi, etc. – allowed the model to incrementally build capability. By the time it was doing instruction tuning, it already had the mechanics of speech generation down cold.
+Transcript alignment was done using Whisper (medium model) to get accurate word timing. Interestingly, they did **not train Moshi directly on Fisher text** for the user side - the user's words were provided only as audio, not as text. This mimics Moshi's deployment setting where it doesn't receive transcripts of user speech.
 
-- **FlashAttention and Efficient Implementation:** Given the enormous sequence lengths for text pretraining (4096 tokens) and model size, they used memory-optimized kernels like **FlashAttention** during training ([](https://kyutai.org/Moshi.pdf#:~:text=model,Kudo%20and%20Richardson)) to speed up and reduce memory overhead in attention computations. They also likely used mixed precision (bfloat16) and sharded data-parallel training (FSDP or ZeRO) to handle the 7B model across GPUs.
+### Synthetic Conversation Data (Instruction Fine-tuning)
 
-- **Regularization:** Techniques like dropout, and specifically for Mimi, quantizer dropout and weight decay on Transformer sub-modules, were used to avoid overfitting and ensure the codec’s robustness at different bitrates ([](https://kyutai.org/Moshi.pdf#:~:text=before%20the%20decoder,%282023%29%2C%20this%20means)) ([](https://kyutai.org/Moshi.pdf#:~:text=optimizer,250%20frames%20before%20the%20last)). The text data was so large that overfitting wasn’t a concern for Helium, but for the smaller fine-tuning sets (Fisher, synthetic dialogues), they likely used early stopping or low learning rates to avoid degrading the pretrained model’s generality.
+The final training stage was an **instructional fine-tune** on a large **synthetic dialogue dataset** created by Kyutai. This process involved:
 
-In terms of fine-tuning methodology, the instruction/safety tuning is analogous to InstructGPT: they fed in conversation prompts and expected Moshi to continue the dialogue in the desired helpful manner. They might have also done some form of RLHF or at least manually curated prompt-response pairs, but given the synthetic data approach, it sounds like they relied on generated supervised data rather than human feedback loops. All fine-tuning was done on top of the same architecture – no new parameters or adapters were added, they trained end-to-end. The final model that emerged (after these phases) was evaluated extensively, as described later.
+1. Fine-tuning Helium (as a text model) on existing dialogue datasets like OpenChat and OpenHermes
+2. Using this model to _generate thousands of new dialogue scripts_ between a user and Moshi
+3. Converting these text dialogues into audio with two distinct voices using multi-stream TTS
+4. Varying the "user" voice's accent and noise conditions while keeping Moshi's voice consistent
 
+This approach created approximately **20,000 hours of synthetic conversational audio** paired with transcripts - far more than any available real dataset.
 
+The synthetic data included:
+- Instruction-following scenarios
+- Question-answering exchanges
+- Safety conversation scripts (where users ask inappropriate questions and Moshi refuses)
+
+This fine-tuning phase (roughly 30k steps with 2.7-hour audio batches) taught Moshi to act as a helpful conversational agent that can follow instructions, answer questions, and maintain consistency throughout dialogues.
+
+## Summary of Training Phases
+
+According to the documentation, Moshi's training had four distinct phases:
+
+1. **Pre-training (Audio-LM phase)**
+   - Data: Unlabeled audio (7M hours)
+   - Setup: Temporal Transformer initialized from Helium's weights, Depth Transformer from scratch
+   - Process: Predict next audio tokens (for one stream) as a language model
+   - Note: Half of the training time included text-only batches to preserve Helium's language skills
+   - Duration: ~1M steps, large batch (16 hours audio per batch)
+   - Technical detail: Used acoustic delay of 2 frames (semantic token appears 2 frames before acoustic tokens)
+
+2. **Post-training (Dual audio streams, unsupervised)**
+   - Data: Simulated two-speaker audio (from diarization/mixing)
+   - Process: Learn to handle two parallel audio token streams
+   - Duration: ~100k steps (8h audio batch)
+   - Technical details: Reduced acoustic delay to 1, text-only batches 10% of the time
+
+3. **Supervised Fine-tuning (Conversational audio)**
+   - Data: Real dialogue audio with transcripts (Fisher corpus)
+   - Process: Learn from aligned transcripts and real conversations
+   - Duration: 10k steps, 40 min audio per batch
+   - Key addition: Inner Monologue text tokens aligned with Moshi's speech
+
+4. **Instruction Fine-tuning**
+   - Data: Synthetic multi-turn conversations (20k hours)
+   - Focus: Instruction following, knowledge Q&A, and safety behavior
+   - Duration: ~30k steps, 2.7h batch
+   - Result: A model that can carry full-duplex conversation while following instructions
+
+## Loss Functions and Optimization
+
+Moshi (Temporal+Depth) is trained as a **causal language model over a composite vocabulary** (text tokens + audio codec tokens). The primary loss is the cross-entropy of predicting the next token in each stream.
+
+At each time step, the model predicts the next token(s) in the sequence of combined streams. For example, the sequence might be:
+```
+[User_audio_token(s)_t=1, Moshi_text_token_t=1, Moshi_audio_token(s)_t=1, User_audio_token(s)_t=2, ...]
+```
+
+The model is trained to predict each token given all previous tokens. Key optimization strategies included:
+
+1. **Weighted Token Loss**
+   - Semantic tokens: weight α=100
+   - Acoustic tokens: weight of 1
+   - This prioritizes linguistic content over minor acoustic details
+
+2. **Acoustic Token Delay**
+   - Semantic token for a time frame is predicted slightly ahead (τ=1) of the acoustic tokens
+   - Helps the model plan phonemes first then acoustics
+   - Effectively implements the inner monologue approach
+
+3. **Balancing Multi-Modal Training**
+   - During unsupervised pre-training, maintained text-only language modeling alongside speech modeling
+   - Used separate optimizer states to prevent "catastrophic forgetting" of Helium's knowledge
+   - Later phases still included text-only batches (10% in one phase) to preserve textual knowledge
+
+4. **Optimization Parameters**
+   - Learning rates: Smaller for Helium's Transformer (~3e-5), higher for new tasks (2e-4)
+   - Used AdamW optimizer with cosine decay schedule
+   - Likely implemented mixed precision (bfloat16) and sharded data-parallel training
+
+This sophisticated training regimen allowed Moshi to develop both strong language understanding and speech generation capabilities in a single unified model.
 
 ---
 
-**Navigation**
+## Navigation
 
 * [Back to Index](index.md)
 * Previous: [Architecture and Components](architecture.md)
 * Next: [Inference and Processing](inference.md)
-
