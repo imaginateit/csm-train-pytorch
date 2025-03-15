@@ -9,7 +9,12 @@ implementations, measuring both speed and accuracy.
 import time
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+    HAS_PLOTTING = True
+except ImportError:
+    HAS_PLOTTING = False
 
 import mlx.core as mx
 
@@ -17,12 +22,16 @@ def run_benchmark():
     """Run benchmark of original vs optimized sampling."""
     # Import implementations
     from src.csm.cli.mlx_sample_exact import mlx_sample_exact
-    from src.csm.cli.mlx_sample_exact_optimized import mlx_sample_exact_optimized
+    try:
+        from src.csm.cli.mlx_sample_exact_optimized import mlx_sample_exact_optimized
+    except ImportError:
+        print("Optimized implementation not found. Please run 'optimize_mlx.sh' first.")
+        return []
     
     # Parameters to test
     temperatures = [0.5, 0.8, 1.0, 1.2]
     topk_values = [25, 50, 100, 200]
-    iterations = 100
+    iterations = 20
     vocab_size = 2048
     
     # Results storage
@@ -96,32 +105,34 @@ def run_benchmark():
             })
     
     # Calculate average speedup
-    avg_speedup = sum(r['speedup'] for r in results) / len(results)
-    avg_match = sum(r['match_percentage'] for r in results) / len(results)
+    avg_speedup = sum(r['speedup'] for r in results) / len(results) if results else 0
+    avg_match = sum(r['match_percentage'] for r in results) / len(results) if results else 0
     
     print("\n=== SUMMARY ===")
     print(f"Average speedup: {avg_speedup:.2f}x")
     print(f"Average match rate: {avg_match:.1f}%")
     
-    # Find best and worst cases
-    best_speedup = max(results, key=lambda r: r['speedup'])
-    worst_speedup = min(results, key=lambda r: r['speedup'])
-    
-    print(f"Best speedup: {best_speedup['speedup']:.2f}x (temp={best_speedup['temperature']}, topk={best_speedup['topk']})")
-    print(f"Worst speedup: {worst_speedup['speedup']:.2f}x (temp={worst_speedup['temperature']}, topk={worst_speedup['topk']})")
+    if results:
+        # Find best and worst cases
+        best_speedup = max(results, key=lambda r: r['speedup'])
+        worst_speedup = min(results, key=lambda r: r['speedup'])
+        
+        print(f"Best speedup: {best_speedup['speedup']:.2f}x (temp={best_speedup['temperature']}, topk={best_speedup['topk']})")
+        print(f"Worst speedup: {worst_speedup['speedup']:.2f}x (temp={worst_speedup['temperature']}, topk={worst_speedup['topk']})")
     
     return results
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark MLX token generation")
     parser.add_argument("--plot", action="store_true", help="Generate plots of results")
+    parser.add_argument("--iterations", type=int, default=20, help="Number of iterations per test")
     args = parser.parse_args()
     
     print("Running MLX token sampling benchmark...")
     results = run_benchmark()
     
-    # Create plots if requested
-    if args.plot:
+    # Create plots if requested and available
+    if args.plot and HAS_PLOTTING and results:
         try:
             # Plot speedup by temperature and topk
             plt.figure(figsize=(12, 6))
@@ -170,6 +181,8 @@ def main():
             print("Matching plot saved to mlx_matching.png")
         except Exception as e:
             print(f"Error creating plots: {e}")
+    elif args.plot and not HAS_PLOTTING:
+        print("Plotting requested but matplotlib is not available. Install with 'pip install matplotlib'")
 
 if __name__ == "__main__":
     main()

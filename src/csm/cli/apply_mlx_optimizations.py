@@ -38,7 +38,7 @@ def patch_mlx_sampling_with_optimized():
         
         # Create a wrapper that preserves the original function signature
         def optimized_wrapper(*args, **kwargs):
-            # Forward to optimized implementation 
+            # Forward to optimized implementation
             return mlx_sample_exact_optimized(*args, **kwargs)
         
         # Transfer docstring and other attributes
