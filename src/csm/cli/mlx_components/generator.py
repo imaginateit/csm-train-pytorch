@@ -493,8 +493,33 @@ class MLXGenerator:
         # Create keyword arguments for generate method
         kwargs = {
             "temperature": temperature,
-            "top_k": topk,  # Be careful with the parameter name, most models use 'top_k'
         }
+        
+        # Handle parameter naming differences (some models use top_k, others use topk)
+        # Try both parameter names for compatibility
+        try:
+            import inspect
+            # Inspect the function signature of the model's generate method
+            if hasattr(self.model, 'generate'):
+                sig = inspect.signature(self.model.generate)
+                param_names = list(sig.parameters.keys())
+                
+                # Use the correct parameter name based on what the function expects
+                if 'top_k' in param_names:
+                    kwargs['top_k'] = topk
+                elif 'topk' in param_names:
+                    kwargs['topk'] = topk
+                else:
+                    # Default to top_k as most models use this
+                    kwargs['top_k'] = topk
+            else:
+                # Default to both for maximum compatibility
+                kwargs['top_k'] = topk
+                kwargs['topk'] = topk
+        except Exception:
+            # If inspection fails, include both parameter names
+            kwargs['top_k'] = topk
+            kwargs['topk'] = topk
         
         if progress_callback is not None:
             kwargs["callback"] = progress_callback
