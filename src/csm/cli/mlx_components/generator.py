@@ -34,7 +34,9 @@ class MLXGenerator:
         model: torch.nn.Module,
         tokenizer: Any,
         device: Optional[torch.device] = None,
-        debug: bool = False
+        debug: bool = False,
+        use_pytorch_tokens: bool = False,
+        use_exact_sampling: bool = False
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -46,6 +48,18 @@ class MLXGenerator:
         self._last_audio = None  # Store last audio for direct access
         self._last_samples = None  # Store raw samples from generate_frame
         self._last_tokens = None  # Store last tokens for debugging
+        
+        # Token generation options
+        self.use_pytorch_tokens = use_pytorch_tokens  # Option to use PyTorch for token generation
+        self.use_exact_sampling = use_exact_sampling  # Option to use exact MLX sampling
+        
+        # Determine sampling mode
+        if self.use_pytorch_tokens:
+            self.sampling_mode = 'pytorch'
+        elif self.use_exact_sampling:
+            self.sampling_mode = 'exact'
+        else:
+            self.sampling_mode = 'mlx'
         
         # Check if MLX is available
         self.mlx_available = is_mlx_available()
@@ -69,10 +83,17 @@ class MLXGenerator:
                 # Set debug flag
                 args.debug = debug
                 
+                # Set token generation strategy options
+                args.use_pytorch_tokens = use_pytorch_tokens
+                args.use_exact_sampling = self.use_exact_sampling
+                
                 # Create MLX wrapper
                 self.mlx_wrapper = MLXWrapper(model, args)
                 if self.debug:
                     print("MLX wrapper initialized successfully")
+                    print(f"Sampling mode: {self.sampling_mode}")
+                    if use_pytorch_tokens:
+                        print("Using PyTorch token generation (hybrid mode) for high quality")
             except Exception as e:
                 print(f"Error initializing MLX wrapper: {e}")
                 self.mlx_wrapper = None
@@ -87,6 +108,7 @@ class MLXGenerator:
         voice: str = "standard",
         temperature: Optional[float] = None,
         topk: Optional[int] = None,
+        seed: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> np.ndarray:
         """
@@ -97,6 +119,7 @@ class MLXGenerator:
             voice: Voice preset to use
             temperature: Temperature for sampling (overrides preset)
             topk: Top-k value for sampling (overrides preset)
+            seed: Random seed for reproducible token generation
             progress_callback: Optional callback for progress updates
             
         Returns:
@@ -126,12 +149,18 @@ class MLXGenerator:
         tokenized = self.tokenize_text(text)
         
         # Generate audio frames
-        audio_tokens = self.generate_audio_tokens(
-            tokenized, 
-            temperature=preset["temperature"],
-            topk=preset["topk"],
-            progress_callback=progress_callback
-        )
+        generate_args = {
+            "text_tokens": tokenized, 
+            "temperature": preset["temperature"],
+            "topk": preset["topk"],
+            "progress_callback": progress_callback
+        }
+        
+        # Add seed if provided
+        if seed is not None:
+            generate_args["seed"] = seed
+            
+        audio_tokens = self.generate_audio_tokens(**generate_args)
         
         # Convert audio tokens to audio waveform
         audio = self.decode_audio_tokens(audio_tokens)
@@ -186,6 +215,7 @@ class MLXGenerator:
         text_tokens: torch.Tensor,
         temperature: float = 1.0,
         topk: int = 25,
+        seed: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> torch.Tensor:
         """
@@ -195,6 +225,7 @@ class MLXGenerator:
             text_tokens: Tokenized text input
             temperature: Temperature for sampling
             topk: Top-k value for sampling
+            seed: Random seed for reproducible token generation
             progress_callback: Optional callback for progress updates
             
         Returns:
@@ -205,28 +236,43 @@ class MLXGenerator:
                 # Use MLX acceleration
                 if self.debug:
                     print("Using MLX acceleration for audio token generation")
-                return self.generate_audio_tokens_mlx(
-                    text_tokens, 
-                    temperature=temperature,
-                    topk=topk,
-                    progress_callback=progress_callback
-                )
+                
+                # Pass all arguments including seed if provided
+                mlx_args = {
+                    "text_tokens": text_tokens,
+                    "temperature": temperature,
+                    "topk": topk,
+                    "progress_callback": progress_callback
+                }
+                
+                if seed is not None:
+                    mlx_args["seed"] = seed
+                    
+                return self.generate_audio_tokens_mlx(**mlx_args)
             else:
                 # Fall back to pure PyTorch
                 if self.debug:
                     print("Using PyTorch for audio token generation")
-                return self.generate_audio_tokens_torch(
-                    text_tokens, 
-                    temperature=temperature,
-                    topk=topk,
-                    progress_callback=progress_callback
-                )
+                
+                # Pass all arguments including seed if provided
+                torch_args = {
+                    "text_tokens": text_tokens,
+                    "temperature": temperature,
+                    "topk": topk,
+                    "progress_callback": progress_callback
+                }
+                
+                if seed is not None:
+                    torch_args["seed"] = seed
+                    
+                return self.generate_audio_tokens_torch(**torch_args)
     
     def generate_audio_tokens_mlx(
         self,
         text_tokens: torch.Tensor,
         temperature: float = 1.0,
         topk: int = 25,
+        seed: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> torch.Tensor:
         """
@@ -236,29 +282,73 @@ class MLXGenerator:
             text_tokens: Tokenized text input
             temperature: Temperature for sampling
             topk: Top-k value for sampling
+            seed: Random seed for reproducible token generation
             progress_callback: Optional callback for progress updates
             
         Returns:
             Generated audio tokens
         """
-        # RELIABLE APPROACH: Use the PyTorch token generator which produces high quality results
-        # This is a strategic decision to improve audio quality while keeping MLX for the rest of the pipeline
-        if self.debug:
-            print(f"Using robust token generation approach for better audio quality")
-            
-        # First try PyTorch token generation which produces reliable results
-        try:
-            pt_tokens = self.generate_audio_tokens_torch(
-                text_tokens, temperature=temperature, topk=topk, progress_callback=progress_callback
-            )
-            if pt_tokens is not None and isinstance(pt_tokens, torch.Tensor) and pt_tokens.numel() > 0:
-                if self.debug:
-                    print(f"Using PyTorch-generated tokens with shape {pt_tokens.shape}")
-                self._last_tokens = pt_tokens  # Store for debug
-                return pt_tokens
-        except Exception as e:
+        # Check if we should explicitly use PyTorch token generation (hybrid mode)
+        # This option produces the highest quality audio while still using MLX for the rest
+        if self.use_pytorch_tokens:
             if self.debug:
-                print(f"PyTorch token generation failed: {e}")
+                print(f"Using explicit PyTorch token generation (hybrid mode) as requested")
+                
+            # Use PyTorch token generation directly
+            try:
+                # Pass all arguments including seed if provided
+                torch_args = {
+                    "text_tokens": text_tokens,
+                    "temperature": temperature,
+                    "topk": topk,
+                    "progress_callback": progress_callback
+                }
+                
+                if seed is not None:
+                    torch_args["seed"] = seed
+                    if self.debug:
+                        print(f"Using seed {seed} for reproducible generation")
+                    
+                pt_tokens = self.generate_audio_tokens_torch(**torch_args)
+                if pt_tokens is not None and isinstance(pt_tokens, torch.Tensor) and pt_tokens.numel() > 0:
+                    if self.debug:
+                        print(f"Using PyTorch-generated tokens with shape {pt_tokens.shape}")
+                    self._last_tokens = pt_tokens  # Store for debug
+                    return pt_tokens
+            except Exception as e:
+                if self.debug:
+                    print(f"Explicit PyTorch token generation failed: {e}")
+                # Continue with MLX as fallback
+        else:
+            # RELIABLE APPROACH: Try PyTorch token generation first which produces high quality results
+            # This is a strategic decision to improve audio quality while keeping MLX for the rest of the pipeline
+            if self.debug:
+                print(f"Using robust token generation approach for better audio quality")
+                
+            # Try PyTorch token generation which produces reliable results
+            try:
+                # Pass all arguments including seed if provided
+                torch_args = {
+                    "text_tokens": text_tokens,
+                    "temperature": temperature,
+                    "topk": topk,
+                    "progress_callback": progress_callback
+                }
+                
+                if seed is not None:
+                    torch_args["seed"] = seed
+                    if self.debug:
+                        print(f"Using seed {seed} for reproducible generation")
+                    
+                pt_tokens = self.generate_audio_tokens_torch(**torch_args)
+                if pt_tokens is not None and isinstance(pt_tokens, torch.Tensor) and pt_tokens.numel() > 0:
+                    if self.debug:
+                        print(f"Using PyTorch-generated tokens with shape {pt_tokens.shape}")
+                    self._last_tokens = pt_tokens  # Store for debug
+                    return pt_tokens
+            except Exception as e:
+                if self.debug:
+                    print(f"PyTorch token generation failed: {e}")
         
         # Continue with MLX approach as fallback
         import inspect
@@ -297,6 +387,16 @@ class MLXGenerator:
                     generate_kwargs['topk'] = topk
                 elif 'top_k' in param_names:
                     generate_kwargs['top_k'] = topk
+                
+                # Pass seed parameter if provided
+                if seed is not None:
+                    if 'seed' in param_names:
+                        generate_kwargs['seed'] = seed
+                    # Also set the MLX random seed for all other sampling operations
+                    import mlx
+                    mlx.random.seed(seed)
+                    if self.debug:
+                        print(f"Set MLX random seed to {seed}")
                     
                 # Handle callback/progress_callback
                 if 'callback' in param_names and progress_callback is not None:
@@ -743,10 +843,13 @@ class MLXGenerator:
         text_tokens: torch.Tensor,
         temperature: float = 1.0,
         topk: int = 25,
+        seed: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> torch.Tensor:
         """
         Generate audio tokens using pure PyTorch.
+        
+        This implementation can use a random seed for reproducible generation.
         
         Args:
             text_tokens: Tokenized text input
@@ -842,6 +945,17 @@ class MLXGenerator:
                     print(f"Direct tokenizer approach failed: {e}")
                 # Fall back to standard approach
 
+        # Set random seed if provided
+        if seed is not None:
+            if self.debug:
+                print(f"Setting PyTorch random seed to {seed}")
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            import random
+            random.seed(seed)
+            import numpy as np
+            np.random.seed(seed)
+        
         # Use the model's native generation method
         # Examine the model to figure out its API
         if hasattr(self.model, 'generate'):

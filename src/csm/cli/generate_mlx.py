@@ -76,12 +76,20 @@ else:
     from ..generator import Segment, load_csm_1b
     from ..models.model import ModelArgs, Model, sample_topk
 
-    def load_csm_1b_mlx(ckpt_path: str):
+    def load_csm_1b_mlx(
+        ckpt_path: str,
+        use_pytorch_tokens: bool = False,
+        use_exact_sampling: bool = False,
+        debug: bool = False
+    ):
         """
         Load the CSM-1B model from a checkpoint path for inference with MLX acceleration.
         
         Args:
             ckpt_path: Path to the checkpoint, either local path or "csm-1B" to download from HuggingFace
+            use_pytorch_tokens: Whether to use PyTorch for token generation (hybrid mode)
+            use_exact_sampling: Whether to use exact PyTorch-matching MLX sampling
+            debug: Whether to enable debug output
             
         Returns:
             MLXGenerator instance with the loaded model
@@ -216,11 +224,13 @@ else:
             except:
                 print("Warning: No tokenizer found - will use model's tokenize method")
         
-        # Create MLX-powered generator
+        # Create MLX-powered generator with options
         generator = MLXGenerator(
             model=torch_model,
             tokenizer=tokenizer,
-            debug=os.environ.get("DEBUG", "0") == "1"
+            debug=debug or os.environ.get("DEBUG", "0") == "1",
+            use_pytorch_tokens=use_pytorch_tokens,
+            use_exact_sampling=use_exact_sampling
         )
         
         return generator
@@ -318,6 +328,24 @@ else:
             default=50,
             help="Top-k sampling parameter (default: 50)",
         )
+        # Sampling mode group
+        sampling_group = parser.add_argument_group("Sampling options")
+        sampling_group.add_argument(
+            "--use-exact-sampling",
+            action="store_true",
+            help="Use the exact PyTorch-matching sampling implementation (higher quality)",
+        )
+        sampling_group.add_argument(
+            "--pytorch-tokens",
+            action="store_true",
+            help="Force PyTorch to generate tokens (hybrid mode, highest quality)",
+        )
+        sampling_group.add_argument(
+            "--seed",
+            type=int,
+            default=None,
+            help="Random seed for reproducible token generation",
+        )
         parser.add_argument(
             "--debug",
             action="store_true",
@@ -392,9 +420,24 @@ else:
                     sys.exit(1)
         
         try:
-            # Load with MLX acceleration
-            generator = load_csm_1b_mlx(model_path)
+            # Load with MLX acceleration with appropriate options
+            generator = load_csm_1b_mlx(
+                model_path, 
+                use_pytorch_tokens=args.pytorch_tokens,
+                use_exact_sampling=args.use_exact_sampling,
+                debug=args.debug
+            )
+            
             print("Model loaded successfully with MLX acceleration")
+            
+            # Determine and print sampling mode
+            if args.pytorch_tokens:
+                print("Using PyTorch token generation (hybrid mode) for highest quality")
+            elif args.use_exact_sampling:
+                print("Using exact PyTorch-matching sampling implementation for higher quality")
+            else:
+                print("Using native MLX sampling implementation")
+                
             using_mlx = True
         except Exception as e:
             print(f"Error loading model with MLX: {e}")
@@ -542,13 +585,19 @@ else:
             # Generate speech
             if hasattr(generator, 'generate_speech'):
                 # Modern modular generator
-                audio = generator.generate_speech(
-                    text=args.text,
-                    voice=speaker_id,
-                    temperature=args.temperature,
-                    topk=args.topk,  # Our param name
-                    progress_callback=progress_callback
-                )
+                generate_kwargs = {
+                    "text": args.text,
+                    "voice": speaker_id,
+                    "temperature": args.temperature,
+                    "topk": args.topk,
+                    "progress_callback": progress_callback
+                }
+                
+                # Add seed if provided for reproducible generation
+                if args.seed is not None:
+                    generate_kwargs["seed"] = args.seed
+                    
+                audio = generator.generate_speech(**generate_kwargs)
             else:
                 # Legacy generator with generate method
                 segments = generator.generate(

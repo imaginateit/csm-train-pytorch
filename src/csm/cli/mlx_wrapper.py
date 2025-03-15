@@ -19,6 +19,7 @@ from csm.cli.mlx_layers import (
     MLXTransformer, torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
 )
 from csm.cli.mlx_embedding import MLXEmbedding, mlx_sample_topk, mlx_sample_categorical
+from csm.cli.mlx_sample_exact import mlx_sample_exact
 from csm.cli.mlx_generation import MLXFrameGenerator
 
 
@@ -50,6 +51,10 @@ class MLXWrapper:
                 args.audio_vocab_size = 2051
                 args.audio_num_codebooks = 32
             args.debug = True  # Enable debug output
+            
+        # Token generation strategy option 
+        self.use_pytorch_tokens = getattr(args, 'use_pytorch_tokens', False)
+        self.sampling_mode = 'pytorch' if self.use_pytorch_tokens else 'mlx'
             
         self.args = args
         self.mlx_backbone = None
@@ -698,8 +703,16 @@ class MLXWrapper:
                     # Matrix multiply
                     c0_logits_mlx = mx.matmul(last_h_mlx, self.codebook0_head_weight.T)
                     
-                    # Sample using MLX
-                    c0_sample_mlx = mlx_sample_categorical(c0_logits_mlx, temperature)
+                    # Sample using MLX with appropriate function
+                    if hasattr(self, 'sampling_mode') and self.sampling_mode == 'exact':
+                        # Use the exact sampling implementation for higher quality
+                        # Generate a seed if we're using exact sampling for reproducibility
+                        seed = int(time.time() * 1000) % 10000
+                        c0_sample_mlx = mlx_sample_exact(c0_logits_mlx, topk=topk, temperature=temperature, seed=seed)
+                    else:
+                        # Use the standard MLX sampling 
+                        c0_sample_mlx = mlx_sample_categorical(c0_logits_mlx, temperature)
+                        
                     c0_sample = mlx_to_torch(c0_sample_mlx)
                     mlx_success += 1
                 else:
