@@ -16,11 +16,11 @@ import torchaudio
 from huggingface_hub import hf_hub_download
 
 # Import modular components
-from csm.cli.mlx_components.utils import (
+from csm.mlx.components.utils import (
     is_mlx_available, check_device_compatibility, setup_mlx_debug, measure_time
 )
-from csm.cli.mlx_components.config import MLXConfig
-from csm.cli.mlx_components.generator import MLXGenerator
+from csm.mlx.components.config import MLXConfig
+from csm.mlx.components.generator import MLXGenerator
 
 # Create dummy modules for imports that might fail on Mac
 try:

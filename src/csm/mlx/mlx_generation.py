@@ -9,9 +9,9 @@ import mlx.core as mx
 import numpy as np
 import torch
 
-from csm.cli.mlx_layers import MLXTransformer, torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
-from csm.cli.mlx_embedding import MLXEmbedding
-from csm.cli.mlx_sample_exact import mlx_sample_exact
+from csm.mlx.mlx_layers import MLXTransformer, torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
+from csm.mlx.mlx_embedding import MLXEmbedding
+from csm.mlx.mlx_sample_exact import mlx_sample_exact
 
 
 class MLXFrameGenerator:
