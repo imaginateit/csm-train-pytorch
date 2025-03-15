@@ -76,6 +76,27 @@ mypy src/ tests/
 
 The MLX acceleration for Apple Silicon is implemented as a modular system:
 
+### MLX Training Command
+
+```bash
+# Train with MLX on Apple Silicon
+python -m csm.cli.train_mlx \
+  --model-path /path/to/model.safetensors \
+  --output-dir ./fine_tuned_model \
+  --audio-dir /path/to/audio \
+  --transcript-dir /path/to/transcripts \
+  --alignment-dir /path/to/alignments \
+  --speaker-id 0 \
+  --learning-rate 1e-5 \
+  --backbone-lr-multiplier 0.1 \
+  --decoder-lr-multiplier 1.0 \
+  --batch-size 2 \
+  --epochs 5 \
+  --save-every 500 \
+  --val-every 100 \
+  --max-seq-len 2048
+```
+
 ### Core Components in `src/csm/cli/mlx_components/`
 
 1. `src/csm/cli/mlx_components/utils.py`: Utility functions for MLX acceleration
