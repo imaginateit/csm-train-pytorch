@@ -33,8 +33,8 @@ def parse_args():
     parser.add_argument(
         "--model-path",
         type=str,
-        required=True,
-        help="Path to the CSM model (.safetensors format)"
+        default="default",
+        help="Path to the CSM model (.safetensors format) or 'default' to use the default model (will download if needed)"
     )
     
     parser.add_argument(
@@ -228,6 +228,45 @@ def check_output_files(output_dir):
     
     return len(model_files) > 0
 
+def get_default_model_path():
+    """Get the default model path, downloading if necessary."""
+    logger.info("Using default model (will download if needed)")
+    try:
+        # Import CSM's model loader
+        from csm.generator import load_csm_1b
+        
+        # This will download the model if not present
+        generator = load_csm_1b(model_path=None, device="cpu")
+        
+        # Get the path to the downloaded model
+        if hasattr(generator, "model_path") and generator.model_path:
+            return generator.model_path
+        
+        # If model_path isn't directly accessible, check common locations
+        import os
+        home_dir = os.path.expanduser("~")
+        cache_dir = os.path.join(home_dir, ".cache", "csm")
+        
+        model_patterns = [
+            os.path.join(cache_dir, "*.safetensors"),
+            os.path.join(cache_dir, "*", "*.safetensors"),
+            os.path.join(home_dir, ".cache", "torch", "hub", "safetensors", "*.safetensors")
+        ]
+        
+        for pattern in model_patterns:
+            import glob
+            matches = glob.glob(pattern)
+            if matches:
+                logger.info(f"Found default model at: {matches[0]}")
+                return matches[0]
+        
+        logger.error("Could not determine default model path after download")
+        raise ValueError("Default model path not found")
+        
+    except Exception as e:
+        logger.error(f"Error getting default model: {e}")
+        raise
+
 def main():
     """Main function to test LoRA fine-tuning."""
     args = parse_args()
@@ -240,6 +279,16 @@ def main():
     script_path = find_huggingface_script()
     if not script_path:
         return 1
+    
+    # Resolve model path if using default
+    if args.model_path == "default":
+        try:
+            args.model_path = get_default_model_path()
+            logger.info(f"Using default model at: {args.model_path}")
+        except Exception as e:
+            logger.error(f"Failed to get default model: {e}")
+            logger.error("Please specify a model path with --model-path")
+            return 1
     
     # Create output directory if not provided
     if args.output_dir:
