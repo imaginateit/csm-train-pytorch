@@ -33,15 +33,28 @@ class MLXModelWrapper:
     and provides optimized methods for model inference.
     """
     
-    def __init__(self, torch_model, args=None):
+    def __init__(self, torch_model_or_args, args=None):
         """
         Initialize the MLX wrapper.
         
         Args:
-            torch_model: PyTorch model to wrap
+            torch_model_or_args: PyTorch model to wrap or model args
             args: Optional configuration arguments
         """
-        self.torch_model = torch_model
+        # Flag for training mode
+        self.train = True
+        
+        # Handle if args are passed instead of a model
+        if isinstance(torch_model_or_args, dict):
+            self.torch_model = None
+            self.args = torch_model_or_args
+            self.debug = os.environ.get("DEBUG", "0") == "1"
+            
+            # Initialize dummy structures for training
+            self._init_from_args()
+            return
+        else:
+            self.torch_model = torch_model_or_args
         
         # Create default args if not provided
         if args is None:
@@ -401,3 +414,194 @@ class MLXModelWrapper:
             self.backbone.reset_caches()
         if self.decoder:
             self.decoder.reset_caches()
+    
+    def _init_from_args(self):
+        """Initialize model structure from args without a PyTorch model."""
+        # Import MLX modules
+        import mlx.core as mx
+        import mlx.nn as nn
+        
+        if self.debug:
+            print("Initializing MLX model structure from args...")
+        
+        # Create dimensions from args
+        hidden_size = self.args.get("hidden_size", 2048)
+        num_layers = self.args.get("num_layers", 32)
+        num_attention_heads = self.args.get("num_attention_heads", 32)
+        intermediate_size = self.args.get("intermediate_size", 8192)
+        
+        # Create config object for transformer
+        import argparse
+        config = argparse.Namespace()
+        config.hidden_size = hidden_size
+        config.num_layers = num_layers
+        config.num_attention_heads = num_attention_heads
+        config.intermediate_size = intermediate_size
+        config.num_key_value_heads = self.args.get("num_key_value_heads", num_attention_heads)
+        
+        # Initialize backbone and decoder with random weights
+        self.backbone = MLXTransformer(config)
+        self.decoder = MLXTransformer(config)
+        
+        # Initialize embeddings with random weights
+        vocab_size = self.args.get("text_vocab_size", 128256)
+        audio_vocab_size = self.args.get("audio_vocab_size", 2051)
+        audio_num_codebooks = self.args.get("audio_num_codebooks", 32)
+        
+        # Create empty embeddings
+        self.text_embeddings = mx.zeros((vocab_size, hidden_size))
+        self.audio_embeddings = mx.zeros((audio_vocab_size * audio_num_codebooks, hidden_size))
+        
+        # Create projection and heads
+        self.projection = mx.zeros((hidden_size, hidden_size))
+        self.codebook0_head = mx.zeros((audio_vocab_size, hidden_size))
+        
+        # Create audio heads
+        self.audio_head = []
+        for i in range(audio_num_codebooks - 1):
+            self.audio_head.append(mx.zeros((audio_vocab_size, hidden_size)))
+        
+        # Initialize embedding helper
+        self.embedding = MLXEmbedding(
+            text_embeddings=self.text_embeddings,
+            audio_embeddings=self.audio_embeddings,
+            audio_vocab_size=audio_vocab_size,
+            audio_num_codebooks=audio_num_codebooks,
+            embed_dim=hidden_size,
+            debug=self.debug
+        )
+        
+        # Create backbone and decoder causal masks
+        self.backbone_causal_mask = create_causal_mask(2048)
+        self.decoder_causal_mask = create_causal_mask(2048)
+        
+        if self.debug:
+            print("MLX model structure initialized with random weights")
+    
+    def parameters(self):
+        """Get all model parameters in a dictionary."""
+        params = {}
+        
+        # Add backbone parameters
+        if self.backbone:
+            backbone_params = self.backbone.parameters()
+            for name, param in backbone_params.items():
+                params[f"backbone.{name}"] = param
+        
+        # Add decoder parameters
+        if self.decoder:
+            decoder_params = self.decoder.parameters()
+            for name, param in decoder_params.items():
+                params[f"decoder.{name}"] = param
+        
+        # Add embedding parameters
+        if hasattr(self, 'text_embeddings'):
+            params["text_embeddings"] = self.text_embeddings
+        
+        if hasattr(self, 'audio_embeddings'):
+            params["audio_embeddings"] = self.audio_embeddings
+        
+        # Add projection and heads
+        if hasattr(self, 'projection'):
+            params["projection"] = self.projection
+        
+        if hasattr(self, 'codebook0_head'):
+            params["codebook0_head"] = self.codebook0_head
+        
+        # Add audio heads
+        if hasattr(self, 'audio_head'):
+            for i, head in enumerate(self.audio_head):
+                params[f"audio_head.{i}"] = head
+        
+        return params
+    
+    def update(self, params):
+        """
+        Update model parameters from a dictionary.
+        
+        Args:
+            params: Dictionary of parameters
+        """
+        # Update backbone parameters
+        backbone_params = {}
+        for name, param in params.items():
+            if name.startswith("backbone."):
+                backbone_params[name[len("backbone."):]] = param
+        
+        if backbone_params and self.backbone:
+            self.backbone.update(backbone_params)
+        
+        # Update decoder parameters
+        decoder_params = {}
+        for name, param in params.items():
+            if name.startswith("decoder."):
+                decoder_params[name[len("decoder."):]] = param
+        
+        if decoder_params and self.decoder:
+            self.decoder.update(decoder_params)
+        
+        # Update embedding parameters
+        if "text_embeddings" in params and hasattr(self, 'text_embeddings'):
+            self.text_embeddings = params["text_embeddings"]
+        
+        if "audio_embeddings" in params and hasattr(self, 'audio_embeddings'):
+            self.audio_embeddings = params["audio_embeddings"]
+        
+        # Update projection and heads
+        if "projection" in params and hasattr(self, 'projection'):
+            self.projection = params["projection"]
+        
+        if "codebook0_head" in params and hasattr(self, 'codebook0_head'):
+            self.codebook0_head = params["codebook0_head"]
+        
+        # Update audio heads
+        if hasattr(self, 'audio_head'):
+            for i, _ in enumerate(self.audio_head):
+                key = f"audio_head.{i}"
+                if key in params:
+                    self.audio_head[i] = params[key]
+        
+        # Reinitialize embedding helper with updated weights
+        if hasattr(self, 'embedding') and (
+            "text_embeddings" in params or "audio_embeddings" in params
+        ):
+            embed_dim = self.backbone.hidden_size if self.backbone else 2048
+            audio_vocab_size = self.args.get("audio_vocab_size", 2051)
+            audio_num_codebooks = self.args.get("audio_num_codebooks", 32)
+            
+            self.embedding = MLXEmbedding(
+                text_embeddings=self.text_embeddings,
+                audio_embeddings=self.audio_embeddings,
+                audio_vocab_size=audio_vocab_size,
+                audio_num_codebooks=audio_num_codebooks,
+                embed_dim=embed_dim,
+                debug=self.debug
+            )
+    
+    def _embed_tokens(self, tokens):
+        """
+        Embed tokens using the embedding helper.
+        
+        Args:
+            tokens: Input tokens
+            
+        Returns:
+            Embedded tokens
+        """
+        if self.embedding:
+            return self.embedding.embed_tokens(tokens)
+        else:
+            raise ValueError("Embedding helper not initialized")
+    
+    def _index_causal_mask(self, mask, positions):
+        """
+        Index into causal mask for positions.
+        
+        Args:
+            mask: Causal mask
+            positions: Position indices
+            
+        Returns:
+            Indexed mask
+        """
+        return index_causal_mask(mask, positions)

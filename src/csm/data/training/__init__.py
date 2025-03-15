@@ -1,6 +1,6 @@
-"""Data loading and processing for CSM."""
+"""Training data utilities for CSM."""
 
-from .training_data import (
+from ..training_data import (
     TrainingExample,
     CSMDataProcessor,
     ContextualExampleGenerator,

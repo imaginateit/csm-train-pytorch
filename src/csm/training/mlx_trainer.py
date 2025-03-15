@@ -95,28 +95,85 @@ class CSMMLXTrainer:
     
     def _load_model(self):
         """Load the CSM model in MLX format."""
-        # This would be implemented based on the MLX version of the model
-        # Placeholder implementation - actual code would need to:
-        # 1. Initialize the MLX model architecture
-        # 2. Load weights from safetensors file
-        # 3. Convert PyTorch weights to MLX format if needed
-        
         from csm.mlx.components.model_wrapper import MLXModelWrapper
         from csm.mlx.mlx_wrapper import PyTorchToMLXConverter
+        from csm.models.model import ModelArgs, Model
+        import torch
+        import mlx.core as mx
         
-        # Create MLX model (placeholder)
+        # Create MLX model
         self.logger.info("Creating MLX model")
-        # self.model = MLXModel()
         
-        # Load weights
-        self.logger.info(f"Loading weights from {self.model_path}")
-        # If weights are in PyTorch format, convert to MLX
-        if self.model_path.endswith(".pt"):
-            # Conversion logic
-            pass
-        else:
+        # First, attempt to load from MLX safetensors if available
+        if self.model_path.endswith(".safetensors"):
             # Direct loading of MLX weights
-            pass
+            self.logger.info(f"Loading MLX weights from {self.model_path}")
+            import safetensors.numpy
+            from mlx.utils import tree_unflatten
+            
+            try:
+                # Load weights
+                weights = safetensors.numpy.load_file(self.model_path)
+                
+                # Create model with default parameters
+                model_args = {
+                    "backbone_flavor": "llama-1B",
+                    "decoder_flavor": "llama-100M",
+                    "text_vocab_size": 128256,
+                    "audio_vocab_size": 2051,
+                    "audio_num_codebooks": 32,
+                }
+                
+                # Initialize model
+                self.model = MLXModelWrapper(model_args)
+                
+                # Update model parameters
+                params = tree_unflatten(list(weights.items()))
+                self.model.update(params)
+                self.logger.info("Successfully loaded MLX model from safetensors")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to load MLX weights: {e}")
+                raise
+            
+        # If PyTorch format or other format, convert from PyTorch
+        else:
+            self.logger.info(f"Loading PyTorch weights from {self.model_path}")
+            try:
+                # Create PyTorch model first
+                model_args = ModelArgs(
+                    backbone_flavor="llama-1B",
+                    decoder_flavor="llama-100M",
+                    text_vocab_size=128256,
+                    audio_vocab_size=2051,
+                    audio_num_codebooks=32,
+                )
+                
+                device = "cpu"  # Always use CPU for conversion
+                pt_model = Model(model_args).to(device=device)
+                
+                # Load PyTorch weights
+                if self.model_path.endswith(".pt"):
+                    state_dict = torch.load(self.model_path, map_location=device)
+                    # If state_dict is a full checkpoint with optimizer state, extract model part
+                    if isinstance(state_dict, dict) and "model" in state_dict:
+                        state_dict = state_dict["model"]
+                    pt_model.load_state_dict(state_dict)
+                else:
+                    # Try to load from generator
+                    from csm.generator import load_csm_1b
+                    generator = load_csm_1b(self.model_path, device)
+                    pt_model = generator._model
+                
+                # Convert PyTorch model to MLX
+                self.logger.info("Converting PyTorch model to MLX format")
+                converter = PyTorchToMLXConverter()
+                self.model = converter.convert(pt_model)
+                self.logger.info("Successfully converted PyTorch model to MLX")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to convert PyTorch model to MLX: {e}")
+                raise
     
     def prepare_optimizer(
         self,
@@ -378,11 +435,55 @@ class CSMMLXTrainer:
         Returns:
             Path to generated audio file
         """
-        # Not implemented yet
-        self.logger.warning("MLX sample generation not implemented yet")
-        
         if output_path is None:
             output_path = str(self.output_dir / f"sample_step_{self.global_step}.wav")
         
-        # Placeholder for MLX generation
+        try:
+            import soundfile as sf
+            import mlx.core as mx
+            from csm.mlx.components.generator import MLXGenerator
+            
+            # Create generator for MLX model
+            self.logger.info(f"Generating sample with MLX model: '{text}'")
+            generator = MLXGenerator(self.model)
+            
+            # Ensure model is in evaluation mode equivalent
+            self.model.train = False
+            
+            # Generate audio tokens
+            generated_audio = generator.generate(
+                text=text,
+                speaker=speaker_id,
+                context=[]
+            )
+            
+            # Convert to numpy and save
+            if isinstance(generated_audio, mx.array):
+                # MLX array
+                audio_array = generated_audio.tolist()
+                sample_rate = 24000  # Default sample rate
+                sf.write(output_path, audio_array, sample_rate)
+                self.logger.info(f"Sample saved to {output_path}")
+            else:
+                # Already numpy or other format
+                sample_rate = 24000  # Default sample rate
+                sf.write(output_path, generated_audio, sample_rate)
+                self.logger.info(f"Sample saved to {output_path}")
+            
+            # Reset model to training mode
+            self.model.train = True
+            
+        except Exception as e:
+            self.logger.error(f"MLX sample generation failed: {e}")
+            self.logger.warning("Falling back to placeholder generation")
+            
+            # Create empty file as placeholder
+            import numpy as np
+            import soundfile as sf
+            
+            # Generate 1 second of silence
+            sample_rate = 24000
+            silence = np.zeros((sample_rate,))
+            sf.write(output_path, silence, sample_rate)
+            
         return output_path

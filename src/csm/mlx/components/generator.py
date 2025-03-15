@@ -38,8 +38,8 @@ class MLXGenerator:
     
     def __init__(
         self,
-        model: torch.nn.Module,
-        tokenizer: Any,
+        model: Any,
+        tokenizer: Any = None,
         device: Optional[torch.device] = None,
         debug: bool = False
     ):
@@ -545,6 +545,43 @@ class MLXGenerator:
                 if hasattr(self.model, '_last_tokens'):
                     return self.model._last_tokens
                 raise ValueError(f"Failed to generate audio tokens: {e}")
+    
+    def generate(
+        self,
+        text: str,
+        speaker: int = 0,
+        temperature: float = 1.0,
+        topk: int = 25,
+        seed: Optional[int] = None,
+        context: List = None,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Generate speech from text.
+        
+        Args:
+            text: Text to generate speech for
+            speaker: Speaker ID
+            temperature: Temperature for sampling
+            topk: Top-k sampling parameter
+            seed: Random seed for reproducibility
+            context: Conversation context (optional)
+            
+        Returns:
+            Generated audio waveform
+        """
+        # Store the text and speaker for reference
+        self.text = text
+        self.speaker = speaker
+        
+        # Generate speech
+        return self.generate_speech(
+            text=text,
+            speaker=speaker,
+            temperature=temperature,
+            topk=topk,
+            seed=seed
+        )
     
     def decode_audio_tokens(self, audio_tokens: torch.Tensor) -> torch.Tensor:
         """

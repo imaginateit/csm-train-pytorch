@@ -18,12 +18,34 @@ from csm.models.model import sample_topk
 from csm.mlx.mlx_layers import (
     MLXTransformer, torch_to_mlx, mlx_to_torch, create_causal_mask, index_causal_mask
 )
+from csm.mlx.components.model_wrapper import MLXModelWrapper
 from csm.mlx.mlx_embedding import MLXEmbedding
 from csm.mlx.mlx_sample_exact import mlx_sample_exact
 from csm.mlx.mlx_generation import MLXFrameGenerator
 
 # MLX is already using the optimized implementation via mlx_sample_exact
 
+
+class PyTorchToMLXConverter:
+    """
+    Converter class to convert PyTorch models to MLX format.
+    """
+    
+    def __init__(self):
+        """Initialize the PyTorch to MLX converter."""
+        pass
+        
+    def convert(self, torch_model):
+        """
+        Convert a PyTorch model to MLX format.
+        
+        Args:
+            torch_model: PyTorch model to convert
+            
+        Returns:
+            MLX model wrapper
+        """
+        return MLXModelWrapper(torch_model)
 
 class MLXWrapper:
     """

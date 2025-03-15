@@ -150,14 +150,41 @@ def compute_loss_mlx(
     positions = mx.expand_dims(positions, 0)
     positions = mx.repeat(positions, batch_size, 0)
     
-    # Forward pass logic for MLX model
-    # This would need to be implemented based on the MLX model architecture
+    # Compute embeddings
+    embeds = model._embed_tokens(input_tokens)
+    masked_embeds = embeds * mx.expand_dims(input_masks, -1)
+    h = mx.sum(masked_embeds, axis=2)
     
-    # Placeholder loss computation
-    # Actual implementation would compute cross-entropy losses for semantic and acoustic tokens
+    # Get backbone outputs
+    mask = model._index_causal_mask(model.backbone_causal_mask, positions)
+    backbone_outputs = model.backbone(h, input_pos=positions, mask=mask)
     
-    total_loss = mx.zeros(1)
-    losses = {"semantic_loss": mx.zeros(1), "acoustic_loss": mx.zeros(1)}
+    # Initialize loss components
+    losses = {}
+    
+    # Get targets for semantic tokens (codebook 0)
+    target_semantic = target_audio_tokens[:, :, 0]
+    
+    # Compute semantic token loss
+    semantic_logits = model.codebook0_head(backbone_outputs[:, :-1])  # exclude last position
+    
+    # MLX cross entropy loss with class indices
+    semantic_loss = nn.losses.cross_entropy(
+        semantic_logits.reshape(-1, semantic_logits.shape[-1]),
+        target_semantic[:, :semantic_logits.shape[1]].reshape(-1),
+        reduction='mean'
+    )
+    
+    losses["semantic_loss"] = semantic_loss
+    total_loss = semantic_weight * semantic_loss
+    
+    # Compute acoustic token losses (decoder)
+    # For this initial implementation, we'll focus on the semantic loss
+    # and implement the acoustic loss in a subsequent iteration
+    acoustic_loss = mx.zeros(1)  # Placeholder for acoustic loss
+    
+    losses["acoustic_loss"] = acoustic_loss
+    total_loss = total_loss + acoustic_weight * acoustic_loss
     
     return total_loss, losses
 
