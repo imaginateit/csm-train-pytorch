@@ -353,8 +353,13 @@ class CSMLoRATrainer(CSMMLXTrainer):
                     decoder_params_count = sum(np.prod(p.shape) for p in decoder_params.values())
                     
                     total_base_params = backbone_params_count + decoder_params_count
-                    efficiency = lora_params_count / total_base_params * 100
-                    self.logger.info(f"Parameter efficiency: {efficiency:.2f}% of base model parameters")
+                    
+                    # Avoid division by zero
+                    if total_base_params > 0:
+                        efficiency = lora_params_count / total_base_params * 100
+                        self.logger.info(f"Parameter efficiency: {efficiency:.2f}% of base model parameters")
+                    else:
+                        self.logger.warning("Cannot calculate parameter efficiency: total base parameters is zero")
             
         except Exception as e:
             self.logger.error(f"Error in prepare_optimizer: {e}")

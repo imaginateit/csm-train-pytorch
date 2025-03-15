@@ -50,34 +50,98 @@ except ImportError:
 
 
 def create_tiny_model(output_path):
-    """Create a tiny model for benchmarking."""
+    """Create a tiny model for benchmarking with proper structure for LoRA."""
     if not HAS_SAFETENSORS:
         print("Cannot create tiny model: safetensors.numpy not available")
         return None
     
     try:
-        # Create a tiny 'model' with minimal parameters
+        # Create a tiny model with minimal parameters but proper structure for LoRA
+        hidden_size = 16
+        num_layers = 2
+        num_heads = 2
+        head_dim = hidden_size // num_heads
+        
+        # Create weights dictionary with proper transformer structures
         weights = {
-            # Backbone components
-            "backbone.embed_dim": np.array(16, dtype=np.int32),
-            "backbone.layers.0.weights": np.zeros((16, 16), dtype=np.float32),
-            "backbone.layers.0.bias": np.zeros(16, dtype=np.float32),
+            # Model dimensions
+            "backbone.hidden_size": np.array(hidden_size, dtype=np.int32),
+            "backbone.num_heads": np.array(num_heads, dtype=np.int32),
+            "backbone.num_layers": np.array(num_layers, dtype=np.int32),
+            "backbone.head_dim": np.array(head_dim, dtype=np.int32),
             
-            # Decoder components
-            "decoder.embed_dim": np.array(16, dtype=np.int32),
-            "decoder.layers.0.weights": np.zeros((16, 16), dtype=np.float32),
-            "decoder.layers.0.bias": np.zeros(16, dtype=np.float32),
+            "decoder.hidden_size": np.array(hidden_size, dtype=np.int32),
+            "decoder.num_heads": np.array(num_heads, dtype=np.int32),
+            "decoder.num_layers": np.array(num_layers, dtype=np.int32),
+            "decoder.head_dim": np.array(head_dim, dtype=np.int32),
             
-            # Embedding components
-            "text_embeddings": np.zeros((100, 16), dtype=np.float32),
-            "audio_embeddings": np.zeros((100, 16), dtype=np.float32),
+            # Embeddings
+            "text_embeddings": np.zeros((100, hidden_size), dtype=np.float32),
+            "audio_embeddings": np.zeros((100, hidden_size), dtype=np.float32),
             
             # Heads
-            "codebook0_head": np.zeros((16, 100), dtype=np.float32),
-            "audio_head.0": np.zeros((16, 100), dtype=np.float32),
-            "projection": np.zeros((16, 16), dtype=np.float32)
+            "codebook0_head": np.zeros((hidden_size, 100), dtype=np.float32),
+            "audio_head.0": np.zeros((hidden_size, 100), dtype=np.float32),
+            "projection": np.zeros((hidden_size, hidden_size), dtype=np.float32)
         }
         
+        # Add backbone layers with proper components
+        for i in range(num_layers):
+            # Attention components
+            weights[f"backbone.layers.{i}.q_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            weights[f"backbone.layers.{i}.k_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            weights[f"backbone.layers.{i}.v_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            weights[f"backbone.layers.{i}.o_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            
+            # Add bias terms
+            weights[f"backbone.layers.{i}.q_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"backbone.layers.{i}.k_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"backbone.layers.{i}.v_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"backbone.layers.{i}.o_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            
+            # MLP components
+            weights[f"backbone.layers.{i}.gate_proj_weight"] = np.zeros((hidden_size * 4, hidden_size), dtype=np.float32)
+            weights[f"backbone.layers.{i}.up_proj_weight"] = np.zeros((hidden_size * 4, hidden_size), dtype=np.float32)
+            weights[f"backbone.layers.{i}.down_proj_weight"] = np.zeros((hidden_size, hidden_size * 4), dtype=np.float32)
+            
+            # Layernorm components
+            weights[f"backbone.layers.{i}.input_layernorm_weight"] = np.ones(hidden_size, dtype=np.float32)
+            weights[f"backbone.layers.{i}.input_layernorm_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"backbone.layers.{i}.post_attention_layernorm_weight"] = np.ones(hidden_size, dtype=np.float32)
+            weights[f"backbone.layers.{i}.post_attention_layernorm_bias"] = np.zeros(hidden_size, dtype=np.float32)
+        
+        # Add decoder layers with proper components
+        for i in range(num_layers):
+            # Attention components
+            weights[f"decoder.layers.{i}.q_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            weights[f"decoder.layers.{i}.k_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            weights[f"decoder.layers.{i}.v_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            weights[f"decoder.layers.{i}.o_proj_weight"] = np.zeros((hidden_size, hidden_size), dtype=np.float32)
+            
+            # Add bias terms
+            weights[f"decoder.layers.{i}.q_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"decoder.layers.{i}.k_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"decoder.layers.{i}.v_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"decoder.layers.{i}.o_proj_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            
+            # MLP components
+            weights[f"decoder.layers.{i}.gate_proj_weight"] = np.zeros((hidden_size * 4, hidden_size), dtype=np.float32)
+            weights[f"decoder.layers.{i}.up_proj_weight"] = np.zeros((hidden_size * 4, hidden_size), dtype=np.float32)
+            weights[f"decoder.layers.{i}.down_proj_weight"] = np.zeros((hidden_size, hidden_size * 4), dtype=np.float32)
+            
+            # Layernorm components
+            weights[f"decoder.layers.{i}.input_layernorm_weight"] = np.ones(hidden_size, dtype=np.float32)
+            weights[f"decoder.layers.{i}.input_layernorm_bias"] = np.zeros(hidden_size, dtype=np.float32)
+            weights[f"decoder.layers.{i}.post_attention_layernorm_weight"] = np.ones(hidden_size, dtype=np.float32)
+            weights[f"decoder.layers.{i}.post_attention_layernorm_bias"] = np.zeros(hidden_size, dtype=np.float32)
+        
+        # Add final layernorm components
+        weights["backbone.final_layernorm_weight"] = np.ones(hidden_size, dtype=np.float32)
+        weights["backbone.final_layernorm_bias"] = np.zeros(hidden_size, dtype=np.float32)
+        weights["decoder.final_layernorm_weight"] = np.ones(hidden_size, dtype=np.float32)
+        weights["decoder.final_layernorm_bias"] = np.zeros(hidden_size, dtype=np.float32)
+        
+        # Save weights to safetensors
         safetensors.numpy.save_file(weights, output_path)
         
         # Create metadata file
@@ -85,18 +149,23 @@ def create_tiny_model(output_path):
             "epoch": 0,
             "global_step": 0,
             "loss": 1.0,
-            "model_path": output_path
+            "model_path": output_path,
+            "hidden_size": hidden_size,
+            "num_layers": num_layers,
+            "num_heads": num_heads
         }
         
         metadata_path = output_path.replace(".safetensors", "_metadata.json")
         with open(metadata_path, "w") as f:
-            json.dump(metadata, f)
+            json.dump(metadata, f, indent=2)
             
-        print(f"Created tiny model at {output_path}")
+        print(f"Created tiny model at {output_path} with proper LoRA structure")
         return output_path
     
     except Exception as e:
         print(f"Error creating tiny model: {e}")
+        import traceback
+        print(traceback.format_exc())
         return None
 
 
