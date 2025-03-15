@@ -22,6 +22,15 @@ from csm.cli.mlx_embedding import MLXEmbedding
 from csm.cli.mlx_sample_exact import mlx_sample_exact
 from csm.cli.mlx_generation import MLXFrameGenerator
 
+# Apply MLX optimizations if available
+try:
+    from csm.cli.apply_mlx_optimizations import apply_general_mlx_optimizations
+    # Apply optimizations silently
+    apply_general_mlx_optimizations()
+except ImportError:
+    # Optimizations aren't available, continue with standard implementation
+    pass
+
 
 class MLXWrapper:
     """
