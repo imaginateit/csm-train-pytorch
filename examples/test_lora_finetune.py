@@ -40,8 +40,8 @@ def parse_args():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="facebook/voxpopuli",
-        help="Hugging Face dataset to use (default: facebook/voxpopuli - an open dataset)"
+        default="patrickvonplaten/librispeech_asr_dummy",
+        help="Hugging Face dataset to use (default: patrickvonplaten/librispeech_asr_dummy - a tiny test dataset)"
     )
     
     parser.add_argument(
