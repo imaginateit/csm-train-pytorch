@@ -68,8 +68,8 @@ def parse_args():
     parser.add_argument(
         "--lora-r",
         type=int,
-        default=8,
-        help="LoRA rank (default: 8)"
+        default=4,
+        help="LoRA rank (default: 4, smaller to reduce memory usage)"
     )
     
     parser.add_argument(
