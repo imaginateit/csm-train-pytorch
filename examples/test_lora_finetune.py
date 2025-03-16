@@ -166,36 +166,75 @@ def run_finetune_process(args, script_path, output_dir):
         cmd.append("--keep-data")
     
     # Add detailed logging
-    cmd.extend(["--log-level", "debug"])
+    cmd.extend(["--log-level", "info"])  # Use info level for cleaner output
     
     logger.info(f"Running command: {' '.join(cmd)}")
+    logger.info("Starting fine-tuning process - this may take several minutes")
+    print("\n" + "="*80)
+    print("STARTING HUGGING FACE FINE-TUNING TEST")
+    print("="*80 + "\n")
     
     try:
-        # Run the process and capture output
+        # Run the process with real-time output
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Redirect stderr to stdout for unified output
             text=True,
-            bufsize=1  # Line buffered
+            bufsize=1,  # Line buffered
+            universal_newlines=True
         )
+        
+        # Process and display output in real-time with a progress spinner
+        import sys
+        import time
+        from itertools import cycle
+        
+        spinner = cycle('⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏')
+        last_update = time.time()
+        last_message = ""
         
         # Process output in real-time
         for line in process.stdout:
-            print(line, end='')
+            # Only keep important lines for display
+            if "error" in line.lower() or "warning" in line.lower() or any(
+                keyword in line.lower() for keyword in [
+                    "downloaded", "processed", "training", "fine-tuning", 
+                    "epoch", "sample", "batch", "loss", "dataset", "model"
+                ]
+            ):
+                # Clean up line for display
+                clean_line = line.strip()
+                if clean_line:
+                    print(f"  {clean_line}")
+                    last_message = clean_line
+                    last_update = time.time()
+            elif time.time() - last_update > 5:
+                # Show a spinner for long-running operations without output
+                current_time = time.time()
+                if current_time - last_update > 30:
+                    # If more than 30 seconds with no output, show a message
+                    print(f"  {next(spinner)} Still running... (last: {last_message})")
+                    last_update = current_time
         
         # Wait for process to complete
         return_code = process.wait()
         
-        # Get any remaining stderr
-        stderr = process.stderr.read()
-        if stderr:
-            print("\nError output:")
-            print(stderr)
+        if return_code == 0:
+            print("\n" + "="*80)
+            print("FINE-TUNING PROCESS COMPLETED SUCCESSFULLY")
+            print("="*80 + "\n")
+        else:
+            print("\n" + "="*80)
+            print("FINE-TUNING PROCESS FAILED")
+            print("="*80 + "\n")
         
         return return_code == 0
     except Exception as e:
         logger.error(f"Error running fine-tuning process: {e}")
+        print("\n" + "="*80)
+        print(f"FINE-TUNING PROCESS FAILED WITH ERROR: {e}")
+        print("="*80 + "\n")
         return False
 
 def check_output_files(output_dir):
@@ -400,8 +439,14 @@ def get_default_model_path():
 
 def main():
     """Main function to test LoRA fine-tuning."""
+    # Print a clear header
+    print("\n" + "="*80)
+    print(" HUGGING FACE LORA FINE-TUNING TEST ".center(80, "="))
+    print("="*80 + "\n")
+    
     args = parse_args()
     
+    print("Phase 1: Checking dependencies and setup")
     # Check dependencies
     if not check_dependencies():
         return 1
@@ -411,49 +456,68 @@ def main():
     if not script_path:
         return 1
     
+    print("\nPhase 2: Locating model")
     # Resolve model path if using default
     if args.model_path == "default":
         try:
             args.model_path = get_default_model_path()
-            logger.info(f"Using default model at: {args.model_path}")
+            print(f"✓ Using model: {args.model_path}")
         except Exception as e:
             logger.error(f"Failed to get default model: {e}")
             logger.error("Please specify a model path with --model-path")
             return 1
+    else:
+        print(f"✓ Using model: {args.model_path}")
     
     # Create output directory if not provided
     if args.output_dir:
         output_dir = args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         using_temp_dir = False
+        print(f"✓ Using output directory: {output_dir}")
     else:
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix="lora_finetune_test_")
         output_dir = temp_dir
         using_temp_dir = True
+        print(f"✓ Created temporary output directory: {output_dir}")
     
-    logger.info(f"Output directory: {output_dir}")
+    print("\nPhase 3: Running fine-tuning process")
+    print(f"• Dataset: {args.dataset} (language: {args.language})")
+    print(f"• Number of samples: {args.num_samples}")
+    print(f"• LoRA rank: {args.lora_r}")
+    print(f"• Batch size: {args.batch_size}")
+    print(f"• Epochs: {args.epochs}")
+    print("\nStarting fine-tuning - this may take several minutes...\n")
     
     # Run the fine-tuning process
     success = run_finetune_process(args, script_path, output_dir)
     
+    print("\nPhase 4: Verifying results")
+    
     if success:
-        logger.info("Fine-tuning process completed successfully")
-        
         # Check output files
         if check_output_files(output_dir):
-            logger.info("✅ TEST PASSED: Fine-tuning produced expected output files")
+            print("✅ TEST PASSED: Fine-tuning produced expected output files")
         else:
-            logger.error("❌ TEST FAILED: Fine-tuning did not produce expected output files")
+            print("❌ TEST FAILED: Fine-tuning did not produce expected output files")
             success = False
     else:
-        logger.error("❌ TEST FAILED: Fine-tuning process failed")
+        print("❌ TEST FAILED: Fine-tuning process failed")
     
     # If using temp dir and --keep-data not specified, print note about temp dir location
     if using_temp_dir:
-        logger.info(f"Test results saved in temporary directory: {output_dir}")
-        logger.info("This directory will be removed when the system cleans up temporary files.")
-        logger.info(f"To preserve results, copy files to a permanent location or use --output-dir next time.")
+        print(f"\nTest results saved in temporary directory: {output_dir}")
+        print("This directory will be removed when the system cleans up temporary files.")
+        print(f"To preserve results, copy files to a permanent location or use --output-dir next time.")
+    
+    # Final summary
+    print("\n" + "="*80)
+    if success:
+        print(" TEST COMPLETED SUCCESSFULLY ".center(80, "="))
+    else:
+        print(" TEST FAILED ".center(80, "="))
+    print("="*80 + "\n")
     
     return 0 if success else 1
 
