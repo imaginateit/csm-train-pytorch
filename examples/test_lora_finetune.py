@@ -149,6 +149,10 @@ def find_huggingface_script():
 
 def run_finetune_process(args, script_path, output_dir):
     """Run the fine-tuning process."""
+    import sys
+    import time
+    from itertools import cycle
+    
     cmd = [
         sys.executable,
         script_path,
@@ -186,9 +190,6 @@ def run_finetune_process(args, script_path, output_dir):
         )
         
         # Process and display output in real-time with a progress spinner
-        import sys
-        import time
-        from itertools import cycle
         
         spinner = cycle('⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏')
         last_update = time.time()
