@@ -333,8 +333,20 @@ def get_default_model_path():
         home_dir = os.path.expanduser("~")
         cache_dir = os.path.join(home_dir, ".cache", "csm")
         
-        # Common locations for the model
+        # Specific path where the CSM model is stored
+        csm_model_path = os.path.join(
+            cache_dir, 
+            "models--sesame--csm-1b", 
+            "snapshots", 
+            "*", 
+            "ckpt.pt"
+        )
+        
+        # Common locations for the model (in order of preference)
         model_patterns = [
+            csm_model_path,  # Direct path to downloaded model
+            os.path.join(cache_dir, "models--*", "snapshots", "*", "*.pt"),
+            os.path.join(cache_dir, "models--*", "snapshots", "*", "*.safetensors"),
             os.path.join(cache_dir, "*.safetensors"),
             os.path.join(cache_dir, "*", "*.safetensors"),
             os.path.join(home_dir, ".cache", "torch", "hub", "safetensors", "*.safetensors")
@@ -343,28 +355,34 @@ def get_default_model_path():
         for pattern in model_patterns:
             matches = glob.glob(pattern)
             if matches:
-                logger.info(f"Found default model at: {matches[0]}")
-                return matches[0]
+                model_path = matches[0]
+                logger.info(f"Found default model at: {model_path}")
+                return model_path
         
         # If no model found, download it using the csm-generate command
         logger.info("No model found, attempting to download using csm-generate")
         import subprocess
         
         try:
-            # Run csm-generate with a minimal command to trigger the download
-            subprocess.run(
-                ["csm-generate", "--text", "Test download", "--dry-run"],
-                check=True,
-                capture_output=True,
-                text=True
-            )
+            # Create a temporary directory for output to avoid creating files
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp_output = os.path.join(tmp_dir, "tmp_output.wav")
+                
+                # Run csm-generate with a minimal command to trigger the download
+                subprocess.run(
+                    ["csm-generate", "--text", "Test download", "--output", tmp_output],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
             
             # Check locations again after download
             for pattern in model_patterns:
                 matches = glob.glob(pattern)
                 if matches:
-                    logger.info(f"Downloaded model found at: {matches[0]}")
-                    return matches[0]
+                    model_path = matches[0]
+                    logger.info(f"Downloaded model found at: {model_path}")
+                    return model_path
         except Exception as e:
             logger.warning(f"Could not run csm-generate to download model: {e}")
                 
