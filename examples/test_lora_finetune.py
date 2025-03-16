@@ -47,8 +47,8 @@ def parse_args():
     parser.add_argument(
         "--language",
         type=str,
-        default="en",
-        help="Language to filter the dataset (default: en)"
+        default="clean",
+        help="Configuration to filter the dataset (default: clean for librispeech_asr_dummy)"
     )
     
     parser.add_argument(
@@ -484,7 +484,7 @@ def main():
         print(f"✓ Created temporary output directory: {output_dir}")
     
     print("\nPhase 3: Running fine-tuning process")
-    print(f"• Dataset: {args.dataset} (language: {args.language})")
+    print(f"• Dataset: {args.dataset} (config: {args.language})")
     print(f"• Number of samples: {args.num_samples}")
     print(f"• LoRA rank: {args.lora_r}")
     print(f"• Batch size: {args.batch_size}")
