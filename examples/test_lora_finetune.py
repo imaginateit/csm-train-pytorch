@@ -169,8 +169,8 @@ def run_finetune_process(args, script_path, output_dir):
     if args.keep_data:
         cmd.append("--keep-data")
     
-    # Add detailed logging
-    cmd.extend(["--log-level", "info"])  # Use info level for cleaner output
+    # Add detailed logging and save mode
+    cmd.extend(["--log-level", "info", "--save-mode", "lora"])  # Use info level and only save LoRA parameters
     
     logger.info(f"Running command: {' '.join(cmd)}")
     logger.info("Starting fine-tuning process - this may take several minutes")
