@@ -20,7 +20,7 @@ from .utils import (
     save_checkpoint,
     load_checkpoint
 )
-from .data import CSMDataset, create_dataloader
+from csm.data import CSMDataset, create_dataloader
 
 
 class CSMTrainer:
